@@ -57,7 +57,9 @@ class HeartbeatAdapter:
 
 
 def test_the_heartbeat_adapter_meets_the_contract(tmp_path: Path) -> None:
-    (tmp_path / "api.heartbeat").write_text('{"beat_at": 0}', encoding="utf-8")  # long stale
+    beat = tmp_path / "api.heartbeat"
+    beat.write_text('{"beat_at": 0}', encoding="utf-8")  # long stale
+    beat.chmod(0o644)  # a status file only its writer can change
     adapter = HeartbeatAdapter(tmp_path, ["api"])
     assert adapter.observe("api", PREDICATE).outcome is Outcome.OBSERVED_BROKEN
     assert_target_adapter(adapter, targets=["api"], predicates=[PREDICATE])

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.24"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,7 +7,12 @@ name = "example-compose-monitor"
 version = "0.1.0"
 description = "Example: a read-only DevOps monitor for Docker Compose services, with Telegram alerts"
 requires-python = ">=3.11"
-dependencies = ["apexai-devops-sdk>=0.1,<0.2"]
+dependencies = [
+  "apexai-devops-sdk @ git+https://github.com/ApexAiOfficial/devops-sdk@v0.1.0",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 # The engine loads a host through this entry point.
 [project.entry-points."apexai_ops.hosts"]

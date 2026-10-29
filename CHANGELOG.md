@@ -13,8 +13,10 @@ First release of the integration layer. Host contract version `1`.
   `TargetAdapter` and `AttentionSink` protocols, identifier and closed-word rules,
   `utc_timestamp`.
 - `compose.ComposeHealthAdapter`: Docker Compose service health through the Docker Engine API.
-- `statusfile.read_json_status`: a bounded, link-safe JSON status-file read.
+- `statusfile.read_json_status`: a bounded, link-safe JSON status-file read that refuses a
+  file others can write.
 - `telegram.TelegramAttentionSink`: at-least-once, de-duplicated attention delivery to Telegram.
 - `config`: settings parsing that refuses rather than guesses; owner-only secret files.
-- `testing`: `assert_target_adapter` contract checks, `FakeDockerDaemon`, `FakeTelegramApi`.
+- `testing`: `assert_target_adapter` contract checks (repeat calls, the time bound, a forked
+  call, synthetic broken looks), `FakeDockerDaemon`, `FakeTelegramApi`.
 - `engine`: the run-time bridge to the engine and `read_only_host_wiring` for monitors.

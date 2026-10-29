@@ -46,8 +46,10 @@ else:
     reason = read.refusal          # state_missing, state_unreadable, state_not_a_file, ...
 ```
 
-The file is opened without following a symbolic link, must be a regular file, is read up to
-`max_bytes` (64 KiB by default), and must hold one JSON object. What its values mean is your
+The file is opened without following a symbolic link, must be a regular file that only its owner
+can write (anyone else who could write it could forge the target's state: `<prefix>_unsafe`), is
+read up to `max_bytes` (64 KiB by default), and must hold one JSON object. Pass
+`trusted_owners={uid, ...}` to also require the writer's account. What its values mean is your
 adapter's to decide.
 
 ## `TelegramAttentionSink`
@@ -63,10 +65,14 @@ sink = TelegramAttentionSink(
 assert sink.check()                              # at start: refuse to run a sink that cannot deliver
 ```
 
-One HTTPS `sendMessage` per chat, inside a 1.5-second deadline. A 400 or 403 marks that chat
-refused for that notice; anything else is retried by the engine. One marker file per notice and
-chat makes delivery at least once and de-duplicated across crashes. The message is plain text from
-the notice's closed fields; pass `render=` for your own wording.
+One HTTPS `sendMessage` per chat, inside a 1.5-second deadline for the whole offer. A 400 or 403
+marks that chat refused for that notice (the engine records it); anything else is retried by the
+engine, and each retry starts at a different chat, so one slow chat cannot starve the others. A
+payload the sink cannot read is answered `failed` (kept and retried), never `refused`. One marker
+file per notice and chat makes delivery at least once and de-duplicated across crashes; markers are
+trusted only while the state directory is private. The message is plain text from the notice's
+closed fields; pass `render=` for your own wording. The token travels in the request path (the Bot
+API's design), so `api_base` must be a server you trust with it.
 
 ## `config`
 

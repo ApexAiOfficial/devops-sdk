@@ -12,8 +12,10 @@ Send-only, built for the engine's offer semantics (see
   kept in memory would die with the offer's process.
 - **A recipient that cannot be reached** (the API answers 400 or 403: the
   chat never started the bot, blocked it, or is gone) is refused for that
-  notice and never retried; any other failure is transient and retried by
-  the engine. One failing chat never stops delivery to the others.
+  notice and never retried, and the engine records the refusal; a chat that
+  later unblocks the bot receives the notices after it. Any other failure is
+  transient and retried by the engine. One failing chat never stops
+  delivery to the others: each retry starts at a different chat.
 
 The message is plain text built from the notice's closed words and
 identifiers only (:func:`render`, or the host's own ``render``); it is never
@@ -23,8 +25,13 @@ parsed as markup.
 (:func:`apexai_devops_sdk.config.read_secret_file`), never kept in the sink,
 never logged or echoed, and only when some chat still needs a send.
 
+**The token travels in the request path** (the Bot API's design), so
+``api_base`` must be a server you trust with it: Telegram's, or your own Bot
+API server.
+
 **The state directory** must exist, be this user's and be writable by no
-one else. An offer proves it can write there before it sends, so a delivery
+one else, or no marker in it is trusted. An offer proves it can write there
+before it sends, so a delivery
 whose marker cannot be written is not re-sent on every retry. Only a regular
 file counts as a marker, and something else at a marker's name stops the
 offer rather than risking a duplicate. Markers are never pruned (one small
@@ -101,7 +108,11 @@ class TelegramAttentionSink:
             raise ContractError("telegram: token_file and state_dir must be absolute paths")
         if not _KEY.fullmatch(token_key):
             raise ContractError("telegram: token_key must be an environment-style name")
-        parts = urlsplit(api_base)
+        try:
+            parts = urlsplit(api_base)
+            port = parts.port  # a malformed port raises here, not at the first send
+        except ValueError:
+            raise ContractError("telegram: api_base is not a URL origin") from None
         secure = parts.scheme == "https" and parts.hostname
         local = parts.scheme == "http" and parts.hostname in _LOOPBACK
         if (
@@ -118,7 +129,7 @@ class TelegramAttentionSink:
         self._token_key = token_key
         self._chats = chats
         self._state = Path(state_dir)
-        self._scheme, self._host, self._port = parts.scheme, str(parts.hostname), parts.port
+        self._scheme, self._host, self._port = parts.scheme, str(parts.hostname), port
         self._deadline = deadline_seconds
         self._render = render
 
@@ -131,7 +142,10 @@ class TelegramAttentionSink:
         try:
             notice = AttentionNotice.from_payload(payload)
         except (ContractError, TypeError):
-            return REFUSED  # not a notice the engine could have offered: never retried
+            # Not a recipient's refusal: a payload this SDK cannot read (an engine
+            # newer than the SDK, say). Failed, so the engine keeps it and retries,
+            # rather than refused, which would drop the notice for good.
+            return FAILED
         try:
             return self._offer(notice)
         except Exception:  # noqa: BLE001 - every unknown is a transient failure, never text
@@ -152,6 +166,8 @@ class TelegramAttentionSink:
 
     def _offer(self, notice: AttentionNotice) -> str:
         deadline = time.monotonic() + self._deadline
+        if not private_directory(self._state):
+            return FAILED  # a marker proves nothing in a directory others can write
         delivered = refused = 0
         owed: list[int] = []
         for chat in self._chats:
@@ -176,7 +192,10 @@ class TelegramAttentionSink:
             return FAILED  # the operator can fix the file; the offer is retried
         text = self._render(notice)
         transient = 0
-        for chat in owed:  # every chat is tried: one failing chat never starves the rest
+        # Each retry starts at a different chat, so one that times out (and spends
+        # the offer's deadline) cannot keep the chats after it from ever being tried.
+        start = notice.attempt % len(owed)
+        for chat in owed[start:] + owed[:start]:
             status = self._send(token, chat, text, deadline)
             if status == ACCEPTED:
                 _write_marker(self._state / f"{notice.notification_id}.{chat}")
@@ -217,6 +236,11 @@ class TelegramAttentionSink:
             {"chat_id": chat, "text": text, "disable_web_page_preview": True}
         ).encode()
         try:
+            connection.connect()  # TCP and TLS, inside the timeout above
+            left = deadline - time.monotonic()
+            if left <= 0 or connection.sock is None:
+                return FAILED
+            connection.sock.settimeout(left)  # re-armed for the request's own phase
             connection.request(
                 "POST",
                 f"/bot{token}/sendMessage",

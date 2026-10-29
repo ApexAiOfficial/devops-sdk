@@ -17,6 +17,7 @@ import os
 from collections.abc import Mapping
 from typing import Any
 
+from apexai_devops_sdk import ContractError
 from apexai_devops_sdk.compose import DEFAULT_SOCKET, ComposeHealthAdapter, ComposeService
 from apexai_devops_sdk.config import SettingError, absolute_path, integers, setting
 from apexai_devops_sdk.engine import read_only_host_wiring
@@ -30,7 +31,10 @@ def services(environ: Mapping[str, str]) -> dict[str, ComposeService]:
         project, _slash, service = where.partition("/")
         if not (target and project and service) or target in pairs:
             raise SettingError("MONITOR_SERVICES must be distinct target=project/service pairs")
-        pairs[target] = ComposeService(project, service)
+        try:
+            pairs[target] = ComposeService(project, service)
+        except ContractError:
+            raise SettingError("MONITOR_SERVICES names a project or service it refuses") from None
     return pairs
 
 

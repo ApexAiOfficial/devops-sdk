@@ -232,3 +232,8 @@ def test_the_adapter_meets_the_contract(daemon: FakeDockerDaemon) -> None:
     adapter = _adapter(daemon.serve(_answer("running", "unhealthy", project="example",
                                             service="app")))  # fmt: skip
     assert_target_adapter(adapter, targets=[TARGET], predicates=[RUNNING, HEALTHY])
+
+
+def test_the_two_condition_classes_must_differ() -> None:
+    with pytest.raises(ContractError):
+        ComposePredicates(down_condition="service_bad", unhealthy_condition="service_bad")

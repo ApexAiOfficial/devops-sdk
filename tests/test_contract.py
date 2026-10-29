@@ -165,3 +165,17 @@ def test_the_package_version_is_the_project_s() -> None:
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     declared = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
     assert apexai_devops_sdk.__version__ == declared
+
+
+def test_free_text_cannot_ride_in_a_detail() -> None:
+    with pytest.raises(ContractError):
+        _observation(detail={"error": "compose failed: token=abc"})
+    with pytest.raises(ContractError):
+        _observation(detail={"path": "/etc/secret"})
+
+
+def test_a_caller_s_mapping_is_not_kept() -> None:
+    mine = {"state": "running"}
+    observation = _observation(detail=mine)
+    mine["state"] = "exited"
+    assert observation.detail == {"state": "running"}
