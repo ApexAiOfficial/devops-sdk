@@ -4,6 +4,14 @@ All notable changes to this SDK. The format follows [Keep a Changelog](https://k
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, a minor version may
 change the API).
 
+## 0.1.1 (2026-10-29)
+
+### Fixed
+- `testing.check_target_adapter` reported nothing and raised instead, on Python 3.11, for an
+  adapter whose `observation_timeout_seconds` raises: Python 3.11 evaluates properties during
+  `isinstance` against a runtime-checkable protocol. The property is now read first and a raise is
+  reported as a violation on every supported Python. Found by this repository's CI (3.11 job).
+
 ## 0.1.0 (2026-10-29)
 
 First release of the integration layer. Host contract version `1`.

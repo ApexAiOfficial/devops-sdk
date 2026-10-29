@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "apexai-devops-sdk"
-version = "0.1.0"
+version = "0.1.1"
 description = "Integration SDK for the ApexAI DevOps engine: the host contract, reusable adapters and sinks, and contract tests."
 readme = "README.md"
 license = "Apache-2.0"
