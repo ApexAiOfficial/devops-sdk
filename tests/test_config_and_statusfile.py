@@ -80,6 +80,7 @@ def test_a_private_directory(tmp_path: Path) -> None:
 def test_a_status_file_is_read_or_refused_by_a_closed_code(tmp_path: Path) -> None:
     good = tmp_path / "good.json"
     good.write_text(json.dumps({"observed": "running"}), encoding="utf-8")
+    good.chmod(0o644)  # only its owner can write it
     assert read_json_status(good).document == {"observed": "running"}
     cases = {
         "missing": (tmp_path / "absent.json", "status_missing"),
@@ -93,6 +94,9 @@ def test_a_status_file_is_read_or_refused_by_a_closed_code(tmp_path: Path) -> No
     link = tmp_path / "link.json"
     link.symlink_to(good)
     cases["link"] = (link, "status_unreadable")
+    for written in tmp_path.glob("*.json"):
+        if not written.is_symlink():
+            written.chmod(0o644)  # only their owner can write them, so each refusal is its own
     for name, (path, refusal) in cases.items():
         read = read_json_status(path)
         assert (read.ok, read.refusal) == (False, refusal), name
@@ -100,3 +104,20 @@ def test_a_status_file_is_read_or_refused_by_a_closed_code(tmp_path: Path) -> No
     assert read_json_status(tmp_path / "absent.json", prefix="state").refusal == "state_missing"
     with pytest.raises(ContractError):
         read_json_status(good, prefix="Bad Prefix")
+
+
+def test_a_status_file_others_can_write_is_unsafe(tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    path.write_text("{}", encoding="utf-8")
+    path.chmod(0o664)
+    assert read_json_status(path).refusal == "status_unsafe"
+    path.chmod(0o644)
+    assert read_json_status(path).ok
+    assert read_json_status(path, trusted_owners={os.geteuid() + 1}).refusal == "status_unsafe"
+    assert read_json_status(path, trusted_owners={os.geteuid()}).ok
+
+
+def test_a_prefix_that_would_overflow_a_closed_word_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(ContractError):
+        read_json_status(tmp_path / "x.json", prefix="p" * 53)
+    assert read_json_status(tmp_path / "x.json", prefix="p" * 52).refusal == "p" * 52 + "_missing"

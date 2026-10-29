@@ -32,6 +32,9 @@ engine only where you run it.
 pip install "apexai-devops-sdk @ git+https://github.com/ApexAiOfficial/devops-sdk@v0.1.0"
 ```
 
+It is not published to a package index. Pin the tag (or a commit) as above, or build the wheel
+from a tag and install it by hash.
+
 Python 3.11 or later, Linux.
 
 ## Quick start: watch a Compose service
@@ -60,15 +63,23 @@ from apexai_devops_sdk.testing import assert_target_adapter
 
 class QueueAdapter:
     observation_timeout_seconds = 2.0
+    queues = {"orders"}
 
     def observe(self, target_id: str, predicate_id: str) -> Observation:
-        backlog = read_backlog(target_id)            # your own, bounded, read-only look
-        return Observation(
-            target_id=target_id, predicate_id=predicate_id,
-            outcome=Outcome.OBSERVED_BROKEN if backlog > 1000 else Outcome.OBSERVED_HEALTHY,
-            observed_at=utc_timestamp(), source_id="queue_depth",
-            reason_code="backlog_high" if backlog > 1000 else "backlog_ok",
-        )
+        def look(outcome: Outcome, reason: str) -> Observation:
+            return Observation(
+                target_id=target_id, predicate_id=predicate_id, outcome=outcome,
+                observed_at=utc_timestamp(), source_id="queue_depth", reason_code=reason,
+            )
+
+        if target_id not in self.queues or predicate_id != "backlog":
+            return look(Outcome.UNOBSERVABLE, "not_watched")   # never guess about the unknown
+        backlog = read_backlog(target_id)                      # your own bounded, read-only look
+        if backlog is None:
+            return look(Outcome.UNOBSERVABLE, "backlog_unreadable")
+        if backlog > 1000:
+            return look(Outcome.OBSERVED_BROKEN, "backlog_high")
+        return look(Outcome.OBSERVED_HEALTHY, "backlog_ok")
 
     def target_fingerprint(self, target_id: str) -> str: return f"queue-{target_id}"
     def desired_revision(self, target_id: str) -> int: return 0

@@ -182,3 +182,42 @@ def test_a_read_only_wiring_allows_nothing(stand_in: None) -> None:
         options.update(bad)
         with pytest.raises(ContractError):
             bridge.read_only_host_wiring(adapter, **options)
+
+
+def test_a_broken_engine_is_not_reported_as_missing(
+    stand_in: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An install whose own import fails says so, and keeps the cause."""
+
+    broken = types.ModuleType("apexai_ops.runtime.wiring")
+
+    def _fail(name: str) -> Any:
+        raise ImportError("a dependency of the engine is missing")
+
+    broken.__getattr__ = _fail  # type: ignore[method-assign]
+    monkeypatch.delitem(sys.modules, "apexai_ops.runtime.wiring")
+    real_import = bridge.importlib.import_module
+
+    def importer(name: str) -> Any:
+        if name == "apexai_ops.runtime.wiring":
+            raise ImportError("a dependency of the engine is missing")
+        return real_import(name)
+
+    monkeypatch.setattr(bridge.importlib, "import_module", importer)
+    assert not bridge.engine_available()
+    with pytest.raises(bridge.EngineUnavailable) as unavailable:
+        bridge.read_only_host_wiring(
+            ComposeHealthAdapter({"web": ComposeService("example", "app")},
+                                 socket_path="/run/docker.sock"),
+            controller_id=CONTROLLER, policy_revision="r1",
+        )  # fmt: skip
+    assert "failed to import" in str(unavailable.value)
+    assert isinstance(unavailable.value.__cause__, ImportError)
+
+
+def test_an_outcome_the_contract_does_not_know_is_a_contract_error(stand_in: None) -> None:
+    class Strange:
+        outcome = "sideways"
+
+    with pytest.raises(ContractError):
+        bridge.from_engine_observation(Strange())

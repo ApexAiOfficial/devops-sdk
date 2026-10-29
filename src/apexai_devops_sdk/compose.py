@@ -112,6 +112,8 @@ class ComposePredicates:
         # A broken look's reason code is its condition class, so both are closed words.
         if not (is_closed_word(self.down_condition) and is_closed_word(self.unhealthy_condition)):
             raise ContractError("compose: condition classes must be closed words")
+        if self.down_condition == self.unhealthy_condition:
+            raise ContractError("compose: the two condition classes must be distinct")
 
 
 class _Refused(Exception):

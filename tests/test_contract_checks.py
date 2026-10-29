@@ -83,3 +83,79 @@ def test_each_violation_is_found(adapter: object, found: str) -> None:
 
 def test_nothing_to_check_is_itself_a_violation() -> None:
     assert check_target_adapter(_Adapter(), targets=[], predicates=[])
+
+
+class _SingleUse(_Adapter):
+    def __init__(self) -> None:
+        self.used = False
+
+    def observe(self, target_id: str, predicate_id: str) -> Observation:
+        if self.used:
+            raise ConnectionError("the handle was closed after the first look")
+        self.used = True
+        return super().observe(target_id, predicate_id)
+
+
+class _Slow(_Adapter):
+    observation_timeout_seconds = 0.05
+
+    def observe(self, target_id: str, predicate_id: str) -> Observation:
+        import time
+
+        time.sleep(0.1)
+        return super().observe(target_id, predicate_id)
+
+
+class _ForkHostile(_Adapter):
+    def __init__(self) -> None:
+        import os
+
+        self.parent = os.getpid()
+
+    def observe(self, target_id: str, predicate_id: str) -> Observation:
+        import os
+
+        if os.getpid() != self.parent:
+            raise RuntimeError("not fork-safe")
+        return super().observe(target_id, predicate_id)
+
+
+class _NeverBroken(_Adapter):
+    """Never observes broken, so only the synthetic look reaches condition_class."""
+
+    def observe(self, target_id: str, predicate_id: str) -> Observation:
+        return Observation(
+            target_id=target_id, predicate_id=predicate_id, outcome=Outcome.UNOBSERVABLE,
+            observed_at=utc_timestamp(), source_id="example",
+        )  # fmt: skip
+
+    def condition_class(self, observation: Observation) -> str:
+        return "not an identifier"
+
+
+class _RaisingTimeout(_Adapter):
+    @property
+    def observation_timeout_seconds(self) -> float:  # type: ignore[override]
+        raise OSError("the config file is gone")
+
+
+@pytest.mark.parametrize(
+    ("adapter", "found"),
+    [
+        (_SingleUse(), "observe raised ConnectionError"),
+        (_Slow(), "longer than observation_timeout_seconds"),
+        (_ForkHostile(), "(in a forked child): observe raised"),
+        (_NeverBroken(), "a synthetic broken look"),
+        (_RaisingTimeout(), "observation_timeout_seconds raised OSError"),
+    ],
+    ids=["single-use", "slow", "not-fork-safe", "condition-never-seen", "timeout-raises"],
+)
+def test_each_harder_violation_is_found(adapter: object, found: str) -> None:
+    problems = check_target_adapter(adapter, targets=["web"], predicates=["up"])
+    assert any(found in problem for problem in problems), problems
+
+
+def test_the_fork_check_can_be_skipped() -> None:
+    assert (
+        check_target_adapter(_ForkHostile(), targets=["web"], predicates=["up"], forked=False) == []
+    )

@@ -86,8 +86,17 @@ class Outcome(StrEnum):
 
 
 def _primitive(value: object) -> bool:
-    if value is None or isinstance(value, (bool, int, str)):
+    """A detail value: a number, a bool, ``None``, or a string that is an identifier.
+
+    Strings are held to the identifier shape (no spaces, no slashes, at most
+    128 characters), so free text such as a log line, an error message or a
+    path cannot ride in a detail.
+    """
+
+    if value is None or isinstance(value, (bool, int)):
         return True
+    if isinstance(value, str):
+        return IDENTIFIER.fullmatch(value) is not None
     return isinstance(value, float) and math.isfinite(value)
 
 
@@ -95,8 +104,10 @@ def _primitive(value: object) -> bool:
 class Observation:
     """One fresh, bounded observation of a named predicate on a target.
 
-    ``detail`` holds closed words and small primitives only (no nested
-    values, no free text), at most :data:`MAX_DETAIL_BYTES` as JSON.
+    ``detail`` holds small primitives only: numbers, bools, ``None`` and
+    identifier-shaped strings (no nested values, no free text), at most
+    :data:`MAX_DETAIL_BYTES` as JSON. It is copied when the observation is
+    made, so a caller that reuses its own mapping cannot change it later.
     ``target_fingerprint`` identifies what the target currently *is* (for
     example a store and the bot it serves): when it changes, the engine
     treats the target as a different one.
@@ -133,9 +144,11 @@ class Observation:
             is_identifier(key) and _primitive(value) for key, value in self.detail.items()
         ):
             raise ContractError("observation: detail holds something other than primitives")
-        size = len(json.dumps(dict(self.detail), separators=(",", ":"), sort_keys=True))
+        copied = dict(self.detail)
+        size = len(json.dumps(copied, separators=(",", ":"), sort_keys=True))
         if size > MAX_DETAIL_BYTES:
             raise ContractError("observation: detail is larger than MAX_DETAIL_BYTES")
+        object.__setattr__(self, "detail", copied)  # the caller's mapping is not kept
 
     @property
     def conclusive(self) -> bool:

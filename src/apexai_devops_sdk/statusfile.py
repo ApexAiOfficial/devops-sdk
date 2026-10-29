@@ -5,11 +5,13 @@ state file, a sidecar's last result). Reading it is the least-privileged way
 to observe: one file read, no subprocess, no network, no daemon access.
 
 :func:`read_json_status` opens the file without following a symbolic link,
-requires a regular file, caps the read, and parses one JSON object. Every
-failure is a closed refusal code, ``<prefix>_missing``, ``_unreadable``,
-``_not_a_file``, ``_oversized`` or ``_malformed``, and nothing the file holds
-is ever put into a refusal. Interpreting the document is the host's: the
-values that mean healthy or broken belong to the system that writes it.
+requires a regular file that no one but its owner can write (and, when
+``trusted_owners`` is given, owned by one of them), caps the read, and parses
+one JSON object. Every failure is a closed refusal code, ``<prefix>_missing``,
+``_unreadable``, ``_not_a_file``, ``_unsafe``, ``_oversized`` or
+``_malformed``, and nothing the file holds is ever put into a refusal.
+Interpreting the document is the host's: the values that mean healthy or
+broken belong to the system that writes it.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ from __future__ import annotations
 import json
 import os
 import stat
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -25,6 +27,8 @@ from typing import Any, Final
 from apexai_devops_sdk.contract import CLOSED_WORD, ContractError
 
 DEFAULT_MAX_BYTES: Final = 64 * 1024
+MAX_PREFIX_LENGTH: Final = 52
+"""So that ``<prefix>_<reason>`` stays a closed word (at most 64 characters)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,12 +44,21 @@ class StatusRead:
 
 
 def read_json_status(
-    path: Path | str, *, prefix: str = "status", max_bytes: int = DEFAULT_MAX_BYTES
+    path: Path | str,
+    *,
+    prefix: str = "status",
+    max_bytes: int = DEFAULT_MAX_BYTES,
+    trusted_owners: Collection[int] | None = None,
 ) -> StatusRead:
-    """One JSON object from ``path``, or a closed refusal. Never raises for the file's sake."""
+    """One JSON object from ``path``, or a closed refusal. Never raises for the file's sake.
 
-    if not CLOSED_WORD.fullmatch(prefix):
-        raise ContractError("prefix is not a closed word")
+    A file that its group or others can write is refused ``<prefix>_unsafe``:
+    anyone who can write it could forge the target's state. Pass
+    ``trusted_owners`` (user ids) to also require the writer's account.
+    """
+
+    if not CLOSED_WORD.fullmatch(prefix) or len(prefix) > MAX_PREFIX_LENGTH:
+        raise ContractError("prefix is not a short closed word")
     if type(max_bytes) is not int or max_bytes < 1:
         raise ContractError("max_bytes must be a positive integer")
     try:
@@ -55,8 +68,13 @@ def read_json_status(
     except OSError:
         return StatusRead(None, f"{prefix}_unreadable")  # a link (ELOOP), permissions, ...
     try:
-        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
             return StatusRead(None, f"{prefix}_not_a_file")
+        if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH) or (
+            trusted_owners is not None and info.st_uid not in trusted_owners
+        ):
+            return StatusRead(None, f"{prefix}_unsafe")
         raw = os.read(descriptor, max_bytes + 1)
     except OSError:
         return StatusRead(None, f"{prefix}_unreadable")

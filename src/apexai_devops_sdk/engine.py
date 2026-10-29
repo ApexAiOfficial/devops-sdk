@@ -53,18 +53,22 @@ class EngineUnavailable(RuntimeError):
 def _module(name: str) -> ModuleType:
     try:
         return importlib.import_module(name)
-    except ImportError:
-        raise EngineUnavailable(
-            f"the DevOps engine's host interface is not installed: {name}"
-        ) from None
+    except ModuleNotFoundError as missing:
+        if missing.name is not None and (
+            name == missing.name or name.startswith(f"{missing.name}.")
+        ):
+            raise EngineUnavailable("the DevOps engine's host interface is not installed") from None
+        raise EngineUnavailable("the DevOps engine is installed but failed to import") from missing
+    except ImportError as broken:
+        raise EngineUnavailable("the DevOps engine is installed but failed to import") from broken
 
 
 def engine_available() -> bool:
-    """Whether the engine's host interface can be imported here."""
+    """Whether every part of the engine's host interface this module uses can be imported."""
 
     try:
-        _module(_OBSERVATION)
-        _module(_WIRING)
+        for name in (_OBSERVATION, _AUTHORITY, _REGISTRY, _WIRING):
+            _module(name)
     except EngineUnavailable:
         return False
     return True
@@ -113,10 +117,14 @@ def from_engine_observation(value: Any) -> Observation:
     """
 
     outcome = getattr(value, "outcome", None)
+    try:
+        converted = Outcome(str(getattr(outcome, "value", outcome)))
+    except ValueError:
+        raise ContractError("engine: the observation's outcome is not a contract Outcome") from None
     fields: dict[str, Any] = {
         "target_id": getattr(value, "target_id", None),
         "predicate_id": getattr(value, "predicate_id", None),
-        "outcome": Outcome(str(getattr(outcome, "value", outcome))),
+        "outcome": converted,
         "observed_at": getattr(value, "observed_at", None),
         "source_id": getattr(value, "source_id", None),
         "reason_code": getattr(value, "reason_code", "") or "",

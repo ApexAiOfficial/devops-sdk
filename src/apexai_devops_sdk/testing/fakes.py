@@ -9,7 +9,10 @@ record what they were asked and answer what the test configures.
   ``stall`` (never answers), ``flood`` (never stops), ``hold`` (keeps the
   connection open after answering) and ``drip`` (one byte every 0.1 s).
 - :class:`FakeTelegramApi`: an HTTP server on loopback answering
-  ``sendMessage`` per chat with a configured status and body (or ``stall``).
+  ``sendMessage`` per chat with a configured status and body (or ``stall``),
+  each request on its own thread, so one stalled chat does not hold others.
+  It records each request's path, which carries the bot token (the Bot API's
+  design): use it with synthetic tokens only, never a real one.
 """
 
 from __future__ import annotations
@@ -74,7 +77,7 @@ while True:
 
 _API = r"""
 import json, sys, time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 config_path, log_path = sys.argv[1], sys.argv[2]
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -94,7 +97,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
     def log_message(self, *args):
         pass
-server = HTTPServer(("127.0.0.1", 0), Handler)
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 print(server.server_address[1], flush=True)
 server.serve_forever()
 """

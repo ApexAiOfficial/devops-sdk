@@ -82,7 +82,7 @@ def test_a_refusing_chat_is_refused_and_never_retried(tmp_path: Path, api: FakeT
     sink = _sink(tmp_path, api, FIRST, SECOND)
     assert sink.offer(_notice()) == "accepted"
     assert sink.offer(_notice()) == "accepted"
-    assert [r["body"]["chat_id"] for r in api.requests()] == [FIRST, SECOND]
+    assert sorted(r["body"]["chat_id"] for r in api.requests()) == [FIRST, SECOND]
     api.answer([400, {"ok": False}])
     other = tmp_path / "other"
     other.mkdir()
@@ -143,8 +143,10 @@ def test_a_foreign_object_at_a_marker_s_name_is_never_taken_as_proof(
     assert sink.offer(_notice()) == "failed" and api.requests() == []
 
 
-def test_a_payload_outside_the_contract_is_refused(tmp_path: Path, api: FakeTelegramApi) -> None:
-    assert _sink(tmp_path, api).offer({"notification_id": "nope"}) == "refused"
+def test_a_payload_outside_the_contract_sends_nothing_and_is_retried(
+    tmp_path: Path, api: FakeTelegramApi
+) -> None:
+    assert _sink(tmp_path, api).offer({"notification_id": "nope"}) == "failed"
     assert api.requests() == []
 
 
@@ -174,3 +176,37 @@ def test_a_bad_configuration_is_refused(
 def test_the_token_never_appears_in_the_sink_s_repr(tmp_path: Path, api: FakeTelegramApi) -> None:
     sink = _sink(tmp_path, api)
     assert TOKEN not in repr(sink) and str(tmp_path) not in repr(sink)
+
+
+def test_a_stalling_chat_cannot_starve_the_one_after_it(
+    tmp_path: Path, api: FakeTelegramApi
+) -> None:
+    """Each retry starts at a different chat, so the second chat is told on a retry."""
+
+    api.answer(TELEGRAM_OK, **{str(FIRST): ["stall", None]})
+    sink = _sink(tmp_path, api, FIRST, SECOND, deadline_seconds=0.5)
+    assert sink.offer(_notice(attempt=0)) == "failed"  # FIRST stalls and spends the deadline
+    assert sink.offer(_notice(attempt=1)) == "failed"  # SECOND first now: told, FIRST still owed
+    assert any(r["body"]["chat_id"] == SECOND for r in api.requests()), api.requests()
+    assert (tmp_path / "delivered" / f"ntf_{'1' * 32}.{SECOND}").is_file()
+
+
+def test_a_payload_the_sdk_cannot_read_is_retried_never_dropped(
+    tmp_path: Path, api: FakeTelegramApi
+) -> None:
+    assert _sink(tmp_path, api).offer({**_notice(), "attempt": "two"}) == "failed"
+
+
+def test_markers_prove_nothing_in_a_directory_others_can_write(
+    tmp_path: Path, api: FakeTelegramApi
+) -> None:
+    sink = _sink(tmp_path, api)
+    assert sink.offer(_notice()) == "accepted"
+    os.chmod(tmp_path / "delivered", 0o777)
+    assert sink.offer(_notice()) == "failed", "a forged marker could suppress an alert"
+
+
+def test_a_malformed_api_base_is_a_contract_error(tmp_path: Path, api: FakeTelegramApi) -> None:
+    for base in ("https://api.example.com:99999", "https://[::1"):
+        with pytest.raises(ContractError):
+            _sink(tmp_path, api, api_base=base)
