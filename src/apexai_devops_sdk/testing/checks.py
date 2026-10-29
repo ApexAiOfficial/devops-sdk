@@ -32,6 +32,7 @@ import os
 import select
 import time
 from collections.abc import Iterable
+from typing import Any, cast
 
 from apexai_devops_sdk.contract import (
     Observation,
@@ -57,13 +58,32 @@ def check_target_adapter(
 ) -> list[str]:
     """Every contract violation of ``adapter`` over every pair of ``targets`` and ``predicates``."""
 
-    if not isinstance(adapter, TargetAdapter):
-        return ["the adapter does not implement TargetAdapter"]
-    problems: list[str] = []
+    # The property is read before the protocol check: on Python 3.11, isinstance against a
+    # runtime-checkable protocol evaluates properties, so a raising one would escape it.
     try:
-        timeout = adapter.observation_timeout_seconds
+        timeout = getattr(adapter, "observation_timeout_seconds")  # noqa: B009
+    except AttributeError:
+        return ["the adapter does not implement TargetAdapter"]
     except Exception as failed:  # noqa: BLE001 - a raise is itself the violation
         return [f"observation_timeout_seconds raised {type(failed).__name__}"]
+    try:
+        implements = isinstance(adapter, TargetAdapter)
+    except Exception as failed:  # noqa: BLE001 - 3.11 evaluates the property again
+        return [f"observation_timeout_seconds raised {type(failed).__name__}"]
+    if not implements:
+        return ["the adapter does not implement TargetAdapter"]
+    return _check(cast(TargetAdapter, adapter), timeout, targets, predicates, forked=forked)
+
+
+def _check(
+    adapter: TargetAdapter,
+    timeout: Any,
+    targets: Iterable[str],
+    predicates: Iterable[str],
+    *,
+    forked: bool,
+) -> list[str]:
+    problems: list[str] = []
     if (
         isinstance(timeout, bool)
         or not isinstance(timeout, (int, float))

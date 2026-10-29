@@ -29,7 +29,7 @@ engine only where you run it.
 ## Install
 
 ```bash
-pip install "apexai-devops-sdk @ git+https://github.com/ApexAiOfficial/devops-sdk@v0.1.0"
+pip install "apexai-devops-sdk @ git+https://github.com/ApexAiOfficial/devops-sdk@v0.1.1"
 ```
 
 It is not published to a package index. Pin the tag (or a commit) as above, or build the wheel
