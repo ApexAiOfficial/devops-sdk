@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "apexai-devops-sdk"
+version = "0.1.0"
+description = "Integration SDK for the ApexAI DevOps engine: the host contract, reusable adapters and sinks, and contract tests."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "ApexAI" }]
+keywords = ["devops", "monitoring", "operations", "sdk", "docker", "telegram"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: System :: Monitoring",
+  "Typing :: Typed",
+]
+# No runtime dependencies: the standard library only. The DevOps engine is
+# licensed separately and is never a dependency of this package.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6", "mypy>=1.10"]
+
+[project.urls]
+Repository = "https://github.com/ApexAiOfficial/devops-sdk"
+Changelog = "https://github.com/ApexAiOfficial/devops-sdk/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/apexai_devops_sdk"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "examples", "docs", "README.md", "CHANGELOG.md", "LICENSE", "SECURITY.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "BLE", "SIM", "RUF"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+files = ["src"]
