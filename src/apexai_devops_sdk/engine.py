@@ -238,7 +238,9 @@ class _DeclaredWatchInventory:
         return self._inventory.WatchInventorySnapshot(
             source_id=WATCH_SOURCE_ID,
             # Fresh per read: the engine refuses a token an earlier reconciliation presented.
-            complete_snapshot_token=f"snap-{secrets.token_hex(16)}",
+            # A short lowercase label (at most 32 characters), as the engine's
+            # durable-identifier rule requires.
+            complete_snapshot_token=f"snap-{secrets.token_hex(12)}",
             declared_watches=self._items,
             page_count=1,
             pages_received=1,

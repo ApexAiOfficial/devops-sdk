@@ -85,6 +85,11 @@ def test_the_inventory_is_one_complete_snapshot_with_a_fresh_token() -> None:
     assert (first.page_count, first.pages_received) == (1, 1)
     assert first.source_id == second.source_id == "sdk-declared"
     assert first.complete_snapshot_token != second.complete_snapshot_token
+    # The engine screens both as durable identifiers before it writes anything.
+    from apexai_ops.control.rearm import is_safe_attribution_id
+
+    assert is_safe_attribution_id(first.source_id), first.source_id
+    assert is_safe_attribution_id(first.complete_snapshot_token), first.complete_snapshot_token
     assert wiring.inventory_retirement_bound == 1
 
 
