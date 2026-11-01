@@ -20,10 +20,11 @@ from apexai_devops_sdk.contract import (
     Remedy,
     SinkOutcome,
     TargetAdapter,
+    Watch,
     utc_timestamp,
 )
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 __all__ = [
     "CONTRACT_VERSION",
@@ -35,6 +36,7 @@ __all__ = [
     "Remedy",
     "SinkOutcome",
     "TargetAdapter",
+    "Watch",
     "__version__",
     "utc_timestamp",
 ]

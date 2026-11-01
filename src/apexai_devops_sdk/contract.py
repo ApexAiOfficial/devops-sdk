@@ -215,6 +215,35 @@ class TargetAdapter(Protocol):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class Watch:
+    """One look the engine owes a target on cadence: predicate P of target T, every N seconds.
+
+    A monitor declares its complete set of watches; the engine decides when each
+    look is due and what a broken answer means. A watch grants nothing: it never
+    authorizes a remedy. ``interval_seconds`` is explicit (no default), finite,
+    and between 1 second and one day; the engine may refuse an interval its
+    deployment does not allow.
+    """
+
+    target_id: str
+    predicate_id: str
+    interval_seconds: float
+
+    def __post_init__(self) -> None:
+        if not is_identifier(self.target_id) or not is_identifier(self.predicate_id):
+            raise ContractError("watch: target_id and predicate_id must be identifiers")
+        interval = self.interval_seconds
+        if (
+            isinstance(interval, bool)
+            or not isinstance(interval, int | float)
+            or not math.isfinite(interval)
+            or not 1.0 <= float(interval) <= 86400.0
+        ):
+            raise ContractError("watch: interval_seconds must be 1 to 86400 seconds")
+        object.__setattr__(self, "interval_seconds", float(interval))
+
+
 class SinkOutcome(StrEnum):
     """A sink's answer to one offer."""
 

@@ -210,3 +210,15 @@ def test_a_malformed_api_base_is_a_contract_error(tmp_path: Path, api: FakeTeleg
     for base in ("https://api.example.com:99999", "https://[::1"):
         with pytest.raises(ContractError):
             _sink(tmp_path, api, api_base=base)
+
+
+def test_a_live_kind_is_never_rendered_as_settled() -> None:
+    """``repeated_failure`` is about a decision that has not settled: it is still failing."""
+
+    live = dict(_notice(), attention_kind="repeated_failure", decision_state="detected")
+    text = render(AttentionNotice.from_payload(live))
+    assert "settled" not in text, text
+    assert "repeated_failure: decision wrk_" in text and "is still detected" in text, text
+    assert "reason: remedy_unresolvable" in text, text
+    settled = render(AttentionNotice.from_payload(_notice()))
+    assert "settled blocked" in settled, settled

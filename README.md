@@ -12,8 +12,8 @@ sink, and an offline kit for testing your own adapters against that contract.
 | | Today |
 |---|---|
 | **Source** | Public on GitHub under the [Apache License 2.0](LICENSE). |
-| **Version** | `0.1.1`, alpha. Pre-1.0: a minor version may change the API. Host contract version `1`. |
-| **Releases** | Git tags `v0.1.0` and `v0.1.1`. There is no GitHub release and no published wheel. |
+| **Version** | `0.2.0`, alpha. Pre-1.0: a minor version may change the API. Host contract version `1`. |
+| **Releases** | Git tags `v0.1.0`, `v0.1.1` and `v0.2.0`. There is no GitHub release and no published wheel. |
 | **Package indexes** | Not on PyPI or any other package index. Install from a tag, as shown [below](#installation). |
 | **Runtime** | Python 3.11 or later, on Linux. No dependencies beyond the standard library. |
 | **The DevOps engine** | Required for real operation. It is proprietary, in development, and runs only in environments ApexAi operates: it is **not distributed, licensed or sold** to customers. For customers, DevOps is planned as an ApexAi-managed service; there is no hosted service, sign-up, or public endpoint yet. |
@@ -48,7 +48,7 @@ described, with its current status, at [apexaiofficial.com/devops](https://apexa
 
 | Module | What it provides |
 |---|---|
-| `apexai_devops_sdk.contract` | The host contract: `Observation`, `Outcome`, `Remedy`, the `TargetAdapter` and `AttentionSink` protocols, `AttentionNotice`, `SinkOutcome`, `utc_timestamp`, `ContractError`. Re-exported from `apexai_devops_sdk`. |
+| `apexai_devops_sdk.contract` | The host contract: `Observation`, `Outcome`, `Remedy`, the `TargetAdapter` and `AttentionSink` protocols, `AttentionNotice`, `SinkOutcome`, `Watch`, `utc_timestamp`, `ContractError`. Re-exported from `apexai_devops_sdk`. |
 | `apexai_devops_sdk.compose` | `ComposeHealthAdapter`: watches Docker Compose service containers through the Docker Engine API (running state and the image's own `HEALTHCHECK`). |
 | `apexai_devops_sdk.statusfile` | `read_json_status`: a bounded, link-safe read of a JSON status file that another process writes. |
 | `apexai_devops_sdk.telegram` | `TelegramAttentionSink`: delivers attention notices to Telegram chats, at least once and de-duplicated. |
@@ -112,17 +112,17 @@ working on the SDK itself.
 ### From a version tag (recommended)
 
 ```bash
-python -m pip install "apexai-devops-sdk @ git+https://github.com/ApexAiOfficial/devops-sdk@v0.1.1"
+python -m pip install "apexai-devops-sdk @ git+https://github.com/ApexAiOfficial/devops-sdk@v0.2.0"
 ```
 
 Check the install:
 
 ```bash
 python -c "import apexai_devops_sdk as sdk; print(sdk.__version__, sdk.CONTRACT_VERSION)"
-# 0.1.1 1
+# 0.2.0 1
 ```
 
-Use `v0.1.1`. In `v0.1.0`, `check_target_adapter` raised instead of reporting an adapter whose
+Use `v0.2.0`, the latest tag. In `v0.1.0`, `check_target_adapter` raised instead of reporting an adapter whose
 `observation_timeout_seconds` raises on Python 3.11 (see [CHANGELOG.md](CHANGELOG.md)).
 
 `pip install apexai-devops-sdk` without a URL fails with "No matching distribution found",
@@ -135,7 +135,7 @@ Pin the same direct reference in your `pyproject.toml`:
 ```toml
 [project]
 dependencies = [
-  "apexai-devops-sdk @ git+https://github.com/ApexAiOfficial/devops-sdk@v0.1.1",
+  "apexai-devops-sdk @ git+https://github.com/ApexAiOfficial/devops-sdk@v0.2.0",
 ]
 
 # Only if your package builds with hatchling, which refuses direct references by default:
@@ -152,12 +152,12 @@ To install without fetching from GitHub at deploy time, build the wheel once fro
 its hash, and install only that file:
 
 ```bash
-git clone --depth 1 --branch v0.1.1 https://github.com/ApexAiOfficial/devops-sdk.git
+git clone --depth 1 --branch v0.2.0 https://github.com/ApexAiOfficial/devops-sdk.git
 python -m pip wheel ./devops-sdk --no-deps -w dist
-python -m pip hash dist/apexai_devops_sdk-0.1.1-py3-none-any.whl
+python -m pip hash dist/apexai_devops_sdk-0.2.0-py3-none-any.whl
 # --hash=sha256:<the hash of the wheel you built>
 
-echo "apexai-devops-sdk==0.1.1 --hash=sha256:<the hash of the wheel you built>" > requirements-sdk.txt
+echo "apexai-devops-sdk==0.2.0 --hash=sha256:<the hash of the wheel you built>" > requirements-sdk.txt
 python -m pip install --no-index --find-links dist --require-hashes -r requirements-sdk.txt
 ```
 
@@ -511,6 +511,7 @@ target, its action registry is empty, and no remedy is ever admitted.
 # my_monitor/wiring.py: the host package's runtime entry point
 import os
 
+from apexai_devops_sdk import Watch
 from apexai_devops_sdk.compose import ComposeHealthAdapter, ComposeService
 from apexai_devops_sdk.engine import read_only_host_wiring
 from apexai_devops_sdk.telegram import TelegramAttentionSink
@@ -530,8 +531,16 @@ def runtime():
         controller_id=os.environ["MY_MONITOR_CONTROLLER_ID"],
         policy_revision="read-only-r1",
         attention_sink=sink,
+        # The looks the engine owes, on cadence: the monitor's complete set, reconciled at start.
+        watches=[Watch("web", "service_running", 60), Watch("web", "service_healthy", 60)],
     )
 ```
+
+`watches` is the monitor's complete set. The engine declares each one at start, authorized for
+this monitor's own set only, and stops watching a target removed from it (one at a time by
+default: `max_unconfirmed_retirements`). A target that stays broken is looked at on a capped
+backoff, and once it has failed long enough the sink is offered a `repeated_failure` notice,
+rendered as "is still broken" rather than "settled".
 
 - `controller_id` is the monitor's machine identity; its format is
   `apexai_devops_sdk.engine.CONTROLLER_ID`. `policy_revision` is an identifier.
@@ -639,7 +648,7 @@ or commit. Do not open a public issue for a vulnerability.
 - **Host contract version.** `apexai_devops_sdk.CONTRACT_VERSION`, currently `"1"`, is versioned
   separately. A change an existing adapter or sink would notice raises it, and the changelog says
   what to change.
-- **Pin a tag.** Each version is a git tag (`v0.1.1` is current). Pin a tag or a commit, never a
+- **Pin a tag.** Each version is a git tag (`v0.2.0` is current). Pin a tag or a commit, never a
   branch.
 - **Python.** 3.11 or later; CI runs ruff, mypy (strict), pytest and a wheel build on 3.11, 3.12
   and 3.13.

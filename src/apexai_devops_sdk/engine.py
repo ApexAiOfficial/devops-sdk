@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import importlib
 import re
-from collections.abc import Mapping
+import secrets
+from collections.abc import Iterable, Mapping
 from types import ModuleType
 from typing import Any, Final
 
@@ -35,6 +36,7 @@ from apexai_devops_sdk.contract import (
     Outcome,
     Remedy,
     TargetAdapter,
+    Watch,
     is_identifier,
 )
 
@@ -45,6 +47,16 @@ _OBSERVATION = "apexai_ops.control.observation"
 _AUTHORITY = "apexai_ops.control.authority"
 _REGISTRY = "apexai_ops.modules.registry"
 _WIRING = "apexai_ops.runtime.wiring"
+_INVENTORY = "apexai_ops.control.inventory"
+_REARM = "apexai_ops.control.rearm"
+_SUPERVISION = "apexai_ops.control.supervision"
+
+WATCH_SOURCE_ID: Final = "sdk-declared"
+"""The inventory source a monitor's declared watches come from. Stable across
+restarts, so the engine applies a changed set as the same source's update."""
+
+WATCH_AUTHORIZER_ID: Final = "sdk-declared-watches"
+"""Who decided a declared watch, as the engine records it: the monitor's own list."""
 
 
 class EngineUnavailable(RuntimeError):
@@ -184,12 +196,64 @@ class EngineTargetAdapter:
         return self._adapter.condition_class(from_engine_observation(observation))
 
 
+class _DeclaredWatchAuthorizer:
+    """The engine's watch authorizer for a monitor's own declared set, and nothing else.
+
+    It authorizes the monitor's own machine actor to declare exactly the
+    declared watches, and to retire any watch no longer declared (so a store
+    removed from the monitor's settings stops being watched). Every other
+    actor, and every other act, is refused.
+    """
+
+    def __init__(self, controller_id: str, declared: frozenset[tuple[str, str]]) -> None:
+        self._controller = controller_id
+        self._declared = declared
+        self._rearm = _module(_REARM)
+
+    def authorize_watch(
+        self, *, actor_id: str, target_id: str, detection_predicate_id: str, act: Any
+    ) -> Any:
+        key = (str(target_id), str(detection_predicate_id))
+        verb = str(getattr(act, "value", act))
+        allowed = actor_id == self._controller and (
+            (verb == "declare" and key in self._declared)
+            or (verb == "retire" and key not in self._declared)
+        )
+        return self._rearm.RearmDecision(
+            authorized=allowed, authorizer_id=WATCH_AUTHORIZER_ID, actor_kind="service"
+        )
+
+
+class _DeclaredWatchInventory:
+    """The monitor's declared watches as one complete snapshot, read once at start."""
+
+    def __init__(self, watches: tuple[Watch, ...]) -> None:
+        self._items = tuple(
+            sorted((w.target_id, w.predicate_id, float(w.interval_seconds)) for w in watches)
+        )
+        self._inventory = _module(_INVENTORY)
+        self._supervision = _module(_SUPERVISION)
+
+    def snapshot(self) -> Any:
+        return self._inventory.WatchInventorySnapshot(
+            source_id=WATCH_SOURCE_ID,
+            # Fresh per read: the engine refuses a token an earlier reconciliation presented.
+            complete_snapshot_token=f"snap-{secrets.token_hex(16)}",
+            declared_watches=self._items,
+            page_count=1,
+            pages_received=1,
+            set_digest=self._supervision.inventory_set_digest(self._items),
+        )
+
+
 def read_only_host_wiring(
     adapter: TargetAdapter,
     *,
     controller_id: str,
     policy_revision: str,
     attention_sink: AttentionSink | None = None,
+    watches: Iterable[Watch] = (),
+    max_unconfirmed_retirements: int = 1,
 ) -> Any:
     """The engine's host wiring for a monitor that observes and alerts, and never acts.
 
@@ -198,6 +262,14 @@ def read_only_host_wiring(
     own remedies are never admitted under that policy. Raises
     :class:`ContractError` for a malformed identity, and whatever the engine
     raises for wiring it refuses.
+
+    ``watches`` is the monitor's complete set of looks (:class:`Watch`). When
+    given, the engine reconciles it once at start: it declares each watch, as
+    this monitor's own machine actor and authorized only for this set, and
+    retires watches no longer in it, at most ``max_unconfirmed_retirements``
+    at a time (more are held for confirmation, so a settings mistake cannot
+    silently stop watching a fleet). Needs an engine whose runtime reconciles
+    a host's watch inventory; an older one refuses the wiring.
     """
 
     if not CONTROLLER_ID.fullmatch(controller_id):
@@ -206,9 +278,30 @@ def read_only_host_wiring(
         raise ContractError("engine: policy_revision must be an identifier")
     if attention_sink is not None and not isinstance(attention_sink, AttentionSink):
         raise ContractError("engine: attention_sink does not implement AttentionSink")
+    declared = tuple(watches)
+    if any(type(watch) is not Watch for watch in declared):
+        raise ContractError("engine: watches must be Watch values")
+    keys = frozenset((w.target_id, w.predicate_id) for w in declared)
+    if len(keys) != len(declared):
+        raise ContractError("engine: a watch is declared twice")
+    if (
+        isinstance(max_unconfirmed_retirements, bool)
+        or not isinstance(max_unconfirmed_retirements, int)
+        or max_unconfirmed_retirements < 0
+    ):
+        raise ContractError("engine: max_unconfirmed_retirements must be a whole number")
     authority = _module(_AUTHORITY)
     registry = _module(_REGISTRY)
     wiring = _module(_WIRING)
+    inventory: dict[str, Any] = {}
+    if declared:
+        if "watch_inventory" not in getattr(wiring.HostWiring, "__dataclass_fields__", {}):
+            raise EngineUnavailable("this DevOps engine cannot reconcile a host's watches")
+        inventory = {
+            "watch_authorizer": _DeclaredWatchAuthorizer(controller_id, keys),
+            "watch_inventory": _DeclaredWatchInventory(declared),
+            "inventory_retirement_bound": max_unconfirmed_retirements,
+        }
     return wiring.HostWiring(
         adapter=EngineTargetAdapter(adapter),
         actor=authority.MachineActor(controller_id=controller_id),
@@ -220,4 +313,5 @@ def read_only_host_wiring(
         ),
         registry=registry.BotExtensionRegistry(),
         attention_sink=attention_sink,
+        **inventory,
     )

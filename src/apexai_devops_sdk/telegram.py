@@ -67,12 +67,20 @@ REFUSED: Final = SinkOutcome.REFUSED.value
 FAILED: Final = SinkOutcome.FAILED.value
 
 
+LIVE_KINDS: Final = frozenset({"repeated_failure"})
+"""Attention kinds about a decision that has not settled: it is still failing."""
+
+
 def render(notice: AttentionNotice) -> str:
     """The default message: the notice's closed words and identifiers, nothing else."""
 
+    if notice.attention_kind in LIVE_KINDS:
+        status = f"is still {notice.decision_state} after repeated failed attempts"
+    else:
+        status = f"settled {notice.decision_state}"
     lines = [
         f"DevOps attention: {notice.target_id}",
-        f"{notice.attention_kind}: decision {notice.work_id} settled {notice.decision_state}",
+        f"{notice.attention_kind}: decision {notice.work_id} {status}",
     ]
     if notice.reason_code:
         lines.append(f"reason: {notice.reason_code}")
