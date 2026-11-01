@@ -2,9 +2,8 @@
 
 ## Reporting a vulnerability
 
-Please report security problems privately, through GitHub's
-[private vulnerability reporting](https://github.com/ApexAiOfficial/devops-sdk/security/advisories/new)
-for this repository. Do not open a public issue for a vulnerability.
+Please report security problems privately, by email to support@apexaiofficial.com. Do not open a
+public issue for a vulnerability.
 
 Include what you found, how to reproduce it, and the version. We aim to acknowledge reports within
 a few days.
@@ -21,4 +20,6 @@ a few days.
 
 ## Scope
 
-This repository covers the SDK only. The ApexAI DevOps engine is a separate, proprietary product.
+This repository covers the SDK only. The ApexAi DevOps engine is a separate, proprietary product that
+runs only in environments ApexAi operates and is not distributed; report a vulnerability in DevOps
+itself the same way, by email to support@apexaiofficial.com.

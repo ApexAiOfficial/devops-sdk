@@ -4,7 +4,7 @@
 
 | Layer | Where it lives | Licence | What it holds |
 |---|---|---|---|
-| **The engine** | ApexAI's private repository | proprietary, licensed separately | Detection, decisions, authority, budgets, durable state, recovery, the runtime that hosts adapters |
+| **The engine** | ApexAi's private repository; runs only in environments ApexAi operates | proprietary; not distributed, licensed or sold | Detection, decisions, authority, budgets, durable state, recovery, the runtime that hosts adapters |
 | **This SDK** | `ApexAiOfficial/devops-sdk` (public) | Apache 2.0 | The host contract, reusable adapters and sinks, settings helpers, contract checks, the run-time bridge |
 | **Your integration** | your application's repository | yours | What *your* system's states mean: your targets, your predicates, your status files, your naming, your deployment |
 
@@ -19,10 +19,11 @@ The rule that decides where code goes:
 
 ## One public SDK, not two
 
-The SDK serves ApexAI's own products and outside developers with the same code. The integration
-surface (observe a target, classify a condition, offer a remedy, deliver a notice) is the same
-whether the engine runs beside your services or is operated for you. What differs between the two
-audiences is *how the engine is obtained*, not *how an application integrates with it*.
+The SDK serves ApexAi's own products and outside developers with the same code. The integration
+surface (observe a target, classify a condition, offer a remedy, deliver a notice) is the same for
+both. The engine itself runs only in environments ApexAi operates and is never handed to customers:
+for them, DevOps is planned as an ApexAi-managed service. What outside developers build and test
+with the SDK alone is their side of the contract: adapters, sinks and their contract tests.
 
 A separate private SDK was considered and not created: it would duplicate the contract, drift from
 it, and need its own versioning and tests, while everything an internal integration needs that is
@@ -42,5 +43,5 @@ that names the engine at all, and it contains only that conversion.
 - The package follows semantic versioning. Before `1.0`, a minor version may change the API.
 - The host contract has its own version (`CONTRACT_VERSION`). A change an existing adapter or sink
   would notice raises it, and the changelog says what to change.
-- `test_engine_live.py` is the agreement check between an SDK version and an engine version: run
-  it wherever you install both.
+- `test_engine_live.py` is the agreement check between an SDK version and an engine version, in
+  the ApexAi-operated environments where both are present; it is skipped everywhere else.

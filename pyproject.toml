@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "apexai-devops-sdk"
 version = "0.1.1"
-description = "Integration SDK for the ApexAI DevOps engine: the host contract, reusable adapters and sinks, and contract tests."
+description = "Integration SDK for the ApexAi DevOps engine: the host contract, reusable adapters and sinks, and contract tests."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.11"
-authors = [{ name = "ApexAI" }]
+authors = [{ name = "ApexAi" }]
 keywords = ["devops", "monitoring", "operations", "sdk", "docker", "telegram"]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -23,7 +23,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 # No runtime dependencies: the standard library only. The DevOps engine is
-# licensed separately and is never a dependency of this package.
+# proprietary, not distributed, and never a dependency of this package.
 dependencies = []
 
 [project.optional-dependencies]
