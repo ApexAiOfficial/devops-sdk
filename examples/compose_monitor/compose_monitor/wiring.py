@@ -1,8 +1,8 @@
 """An example host distribution: a read-only monitor of Compose services with Telegram alerts.
 
-Install it beside the engine and start the engine's runtime with this host;
-the engine calls :func:`runtime` once at start. Settings (all required except
-the Telegram ones):
+The engine, which runs only in environments ApexAi operates, loads this host
+through its ``runtime`` entry point and calls :func:`runtime` once at start.
+Settings (all required except the Telegram ones):
 
 - ``MONITOR_SERVICES``: ``target=project/service`` pairs, comma-separated;
 - ``MONITOR_CONTROLLER_ID``: this monitor's identity, ``ctl_`` and 32 hex digits;

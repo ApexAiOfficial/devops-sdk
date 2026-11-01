@@ -1,9 +1,10 @@
-"""The bridge against the real engine, where its licensed package is installed.
+"""The bridge against the real engine, where it is present.
 
-Skipped elsewhere (this repository's CI does not have the engine). A host
-that deploys with the engine runs this file in its own environment to prove
-the SDK and the engine it pins agree: a conclusive look converts both ways,
-the engine accepts the wiring, and the sink takes the engine's own payload.
+The engine runs only in environments ApexAi operates, so this file is skipped
+everywhere else, including this repository's CI. Where the engine is present,
+it proves that the SDK and that engine version agree: a conclusive look
+converts both ways, the engine accepts the wiring, and the sink takes the
+engine's own payload.
 """
 
 from __future__ import annotations

@@ -1,10 +1,9 @@
 """The run-time bridge, against a stand-in for the engine's host interface.
 
-The engine is licensed separately and is not installed in this repository's
-CI. These tests install a minimal stand-in exposing the documented
-constructors the bridge calls, so the conversion is checked everywhere;
-``test_engine_live.py`` repeats the essentials against the real engine
-where it is installed.
+The engine is proprietary and is not present in this repository's CI. These
+tests install a minimal stand-in exposing the documented constructors the
+bridge calls, so the conversion is checked everywhere; ``test_engine_live.py``
+repeats the essentials against the real engine where it is present.
 """
 
 from __future__ import annotations

@@ -1,12 +1,13 @@
-"""The bridge to the DevOps engine, used at run time where the engine is installed.
+"""The bridge to the DevOps engine, used at run time where the engine is present.
 
 Everything else in this SDK is engine-neutral. This module converts SDK
 values into the engine's own types through the engine's public host
 interface, and builds the engine's host wiring for a monitor. It contains no
 engine code: it imports the engine lazily, when a function here is called,
-and raises :class:`EngineUnavailable` if the engine is not installed.
+and raises :class:`EngineUnavailable` if the engine is absent.
 
-The engine is licensed separately and is not distributed with this SDK.
+The engine is proprietary, runs only in environments ApexAi operates, and is
+not distributed with this SDK or otherwise.
 
 Typical use, in a host distribution's ``runtime`` entry point::
 
@@ -47,7 +48,7 @@ _WIRING = "apexai_ops.runtime.wiring"
 
 
 class EngineUnavailable(RuntimeError):
-    """The DevOps engine (or the part of its host interface needed) is not installed."""
+    """The DevOps engine (or the part of its host interface needed) is not present."""
 
 
 def _module(name: str) -> ModuleType:
