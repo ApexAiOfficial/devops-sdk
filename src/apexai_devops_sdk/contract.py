@@ -274,7 +274,10 @@ _NOTICE_FIELDS: Final = (
 
 @dataclass(frozen=True, slots=True)
 class AttentionNotice:
-    """What the engine offers a sink: closed words, identifiers and timestamps only."""
+    """What the engine offers a sink: closed words, identifiers and timestamps only.
+
+    ``settled_at`` is when the decision settled, and ``None`` while it has not.
+    """
 
     notification_id: str
     work_id: str

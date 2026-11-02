@@ -19,7 +19,7 @@ change the API).
 ### Changed
 - `telegram.render`: a `repeated_failure` notice is about a decision that has not settled; it now
   reads "is still <state> after repeated failed attempts", and any other notice without
-  `settled_at` reads "is <state>, not settled". Neither says "settled".
+  `settled_at` reads "is <state>, not settled". Neither presents the decision as settled.
 
 ## 0.1.1 (2026-10-29)
 

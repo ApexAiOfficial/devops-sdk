@@ -52,10 +52,11 @@ _REARM = "apexai_ops.control.rearm"
 _SUPERVISION = "apexai_ops.control.supervision"
 
 WATCH_SOURCE_PREFIX: Final = "sdk-"
-"""Each monitor's watches come from its own inventory source, ``sdk-`` and the first 24
-hex digits of its controller id. Stable across restarts, so the engine applies a
-changed set as the same source's update; another monitor's set is another source,
-whose removals the engine never applies without confirmation."""
+"""Each monitor's watches come from its own inventory source: ``sdk-`` and the last 28
+hex digits of its controller id (32 characters, the engine's limit). Stable across
+restarts, so the engine applies a changed set as the same source's update; another
+monitor's set is another source, whose removals the engine never applies without
+confirmation."""
 
 WATCH_AUTHORIZER_ID: Final = "sdk-declared-watches"
 """Who decided a declared watch, as the engine records it: the monitor's own list."""
@@ -93,7 +94,11 @@ def engine_available(*, watches: bool = False) -> bool:
             _module(name)
     except EngineUnavailable:
         return False
-    return True
+    return not watches or _reconciles_watches(_module(_WIRING))
+
+
+def _reconciles_watches(wiring: ModuleType) -> bool:
+    return "watch_inventory" in getattr(wiring.HostWiring, "__dataclass_fields__", {})
 
 
 def watch_source_id(controller_id: str) -> str:
@@ -101,7 +106,7 @@ def watch_source_id(controller_id: str) -> str:
 
     if not CONTROLLER_ID.fullmatch(controller_id):
         raise ContractError("engine: controller_id must be ctl_ and 32 hex digits")
-    return WATCH_SOURCE_PREFIX + controller_id[4:28]
+    return WATCH_SOURCE_PREFIX + controller_id[-28:]
 
 
 def to_engine_observation(observation: Observation) -> Any:
@@ -320,7 +325,7 @@ def read_only_host_wiring(
     wiring = _module(_WIRING)
     inventory: dict[str, Any] = {}
     if declared is not None:
-        if "watch_inventory" not in getattr(wiring.HostWiring, "__dataclass_fields__", {}):
+        if not _reconciles_watches(wiring):
             raise EngineUnavailable("this DevOps engine cannot reconcile a host's watches")
         inventory = {
             "watch_authorizer": _DeclaredWatchAuthorizer(controller_id, keys),

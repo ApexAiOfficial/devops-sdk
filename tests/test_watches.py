@@ -90,5 +90,8 @@ def test_each_monitor_has_its_own_stable_source() -> None:
     source = watch_source_id(CONTROLLER)
     assert source == watch_source_id(CONTROLLER) != watch_source_id("ctl_" + "3" * 32)
     assert source.startswith("sdk-") and len(source) <= 32 and source == source.lower()
+    assert len(source) <= 32
+    # Two ids that share a long prefix are still two sources.
+    assert watch_source_id("ctl_" + "a" * 31 + "1") != watch_source_id("ctl_" + "a" * 31 + "2")
     with pytest.raises(ContractError):
         watch_source_id("ctl_short")

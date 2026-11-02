@@ -165,6 +165,17 @@ def test_an_older_engine_refuses_watches_and_says_so(stand_in: None) -> None:
     assert _watch_wiring().attention_sink is None
 
 
+def test_an_engine_whose_wiring_cannot_take_watches_is_not_reported_able(
+    watch_stand_in: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The watch modules import, but the host wiring predates the inventory: not able."""
+
+    monkeypatch.setattr(sys.modules["apexai_ops.runtime.wiring"], "HostWiring", _HostWiring)
+    assert bridge.engine_available() and not bridge.engine_available(watches=True)
+    with pytest.raises(bridge.EngineUnavailable):
+        _watch_wiring(watches=WATCHES)
+
+
 def test_without_watches_the_wiring_declares_nothing(watch_stand_in: None) -> None:
     assert bridge.engine_available(watches=True)
     wiring = _watch_wiring()

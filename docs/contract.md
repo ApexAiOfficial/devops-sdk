@@ -66,6 +66,8 @@ deployment does not allow.
 When a decision needs a person (a blocker, a recovery that could not finish, or a decision that
 has not settled and keeps failing: `repeated_failure`), the engine offers an
 `AttentionNotice` to your sink: identifiers, closed words and timestamps only, never adapter text.
+Its `settled_at` is when the decision settled. It is absent (`None`) while the decision has not
+settled, as for `repeated_failure`: such a notice is about something still happening.
 
 `offer(payload)` returns `accepted`, `refused` or `failed`:
 
