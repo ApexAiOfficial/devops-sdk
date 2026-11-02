@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from apexai_devops_sdk import ContractError, Observation, Outcome, Remedy
+from apexai_devops_sdk import ContractError, Observation, Outcome, Remedy, Watch
 from apexai_devops_sdk import engine as bridge
 from apexai_devops_sdk.compose import ComposeHealthAdapter, ComposeService
 
@@ -103,6 +103,110 @@ def stand_in(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
             setattr(module, member, value)
         monkeypatch.setitem(sys.modules, name, module)
     yield
+
+
+@dataclass(frozen=True)
+class _WatchInventorySnapshot:
+    source_id: str
+    complete_snapshot_token: str
+    declared_watches: tuple[tuple[str, str, float], ...]
+    page_count: int
+    pages_received: int
+    set_digest: str
+
+
+@dataclass(frozen=True)
+class _RearmDecision:
+    authorized: bool
+    authorizer_id: str
+    actor_kind: str
+
+
+@dataclass
+class _WatchHostWiring(_HostWiring):
+    watch_authorizer: Any = None
+    watch_inventory: Any = None
+    inventory_retirement_bound: Any = None
+
+
+@pytest.fixture
+def watch_stand_in(stand_in: None, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """The stand-in, as an engine that reconciles a host's watch inventory."""
+
+    modules: dict[str, dict[str, Any]] = {
+        "apexai_ops.control.inventory": {"WatchInventorySnapshot": _WatchInventorySnapshot},
+        "apexai_ops.control.rearm": {"RearmDecision": _RearmDecision},
+        "apexai_ops.control.supervision": {"inventory_set_digest": lambda items: f"set:{items!r}"},
+    }
+    for name, members in modules.items():
+        module = types.ModuleType(name)
+        for member, value in members.items():
+            setattr(module, member, value)
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setattr(sys.modules["apexai_ops.runtime.wiring"], "HostWiring", _WatchHostWiring)
+    yield
+
+
+WATCHES = (Watch("web", "store_health", 60), Watch("api", "store_running", 30))
+
+
+def _watch_wiring(**kwargs: Any) -> Any:
+    adapter = ComposeHealthAdapter({"web": ComposeService("example", "app")},
+                                   socket_path="/run/docker.sock")  # fmt: skip
+    return bridge.read_only_host_wiring(
+        adapter, controller_id=CONTROLLER, policy_revision="r1", **kwargs
+    )
+
+
+def test_an_older_engine_refuses_watches_and_says_so(stand_in: None) -> None:
+    assert bridge.engine_available() and not bridge.engine_available(watches=True)
+    with pytest.raises(bridge.EngineUnavailable):
+        _watch_wiring(watches=WATCHES)
+    assert _watch_wiring().attention_sink is None
+
+
+def test_without_watches_the_wiring_declares_nothing(watch_stand_in: None) -> None:
+    assert bridge.engine_available(watches=True)
+    wiring = _watch_wiring()
+    assert wiring.watch_inventory is None and wiring.watch_authorizer is None
+
+
+def test_the_inventory_is_one_complete_snapshot_with_a_fresh_token(watch_stand_in: None) -> None:
+    wiring = _watch_wiring(watches=WATCHES)
+    first, second = wiring.watch_inventory.snapshot(), wiring.watch_inventory.snapshot()
+    items = (("api", "store_running", 30.0), ("web", "store_health", 60.0))
+    assert first.declared_watches == items and first.set_digest == f"set:{items!r}"
+    assert (first.page_count, first.pages_received) == (1, 1)
+    assert first.source_id == second.source_id == bridge.watch_source_id(CONTROLLER)
+    assert first.complete_snapshot_token != second.complete_snapshot_token
+    token = first.complete_snapshot_token
+    assert len(token) <= 32 and token == token.lower(), token
+    assert wiring.inventory_retirement_bound == 1
+
+
+def test_an_empty_set_is_a_set(watch_stand_in: None) -> None:
+    wiring = _watch_wiring(watches=())
+    assert wiring.watch_inventory.snapshot().declared_watches == ()
+    assert wiring.watch_authorizer is not None
+
+
+def test_the_authorizer_allows_only_the_monitor_its_own_set(watch_stand_in: None) -> None:
+    authorize = _watch_wiring(watches=WATCHES).watch_authorizer.authorize_watch
+
+    def allowed(actor: str, target: str, predicate: str, act: str) -> bool:
+        decision = authorize(
+            actor_id=actor, target_id=target, detection_predicate_id=predicate, act=act
+        )
+        assert decision.authorizer_id == bridge.WATCH_AUTHORIZER_ID
+        return bool(decision.authorized)
+
+    assert allowed(CONTROLLER, "web", "store_health", "declare")
+    assert not allowed("ctl_" + "3" * 32, "web", "store_health", "declare")
+    assert not allowed(CONTROLLER, "web", "store_running", "declare")
+    assert allowed(CONTROLLER, "gone", "store_health", "retire")
+    assert not allowed(CONTROLLER, "web", "store_health", "retire")
+    assert not allowed("ctl_" + "3" * 32, "gone", "store_health", "retire")
+    assert not allowed(CONTROLLER, "web", "store_health", "pause")
 
 
 def _observation(outcome: Outcome = Outcome.OBSERVED_BROKEN) -> Observation:

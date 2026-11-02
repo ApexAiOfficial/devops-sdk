@@ -536,17 +536,19 @@ def runtime():
     )
 ```
 
-`watches` is the monitor's complete set. The engine declares each one at start, authorized for
-this monitor's own set only, and stops watching a target removed from it (one at a time by
-default: `max_unconfirmed_retirements`). A target that stays broken is looked at on a capped
-backoff, and once it has failed long enough the sink is offered a `repeated_failure` notice,
-rendered as "is still broken" rather than "settled".
+`watches` is the monitor's complete set. The engine declares each one at start, as this monitor,
+and stops watching a target removed from it, at most `max_unconfirmed_retirements` (default 1)
+without confirmation. An empty set is a set: it stops watching everything this monitor declared,
+within that bound. Leaving `watches` out declares nothing and changes nothing. A sink can be
+offered a `repeated_failure` notice about a decision that has not settled; `telegram.render`
+says so rather than "settled".
 
 - `controller_id` is the monitor's machine identity; its format is
   `apexai_devops_sdk.engine.CONTROLLER_ID`. `policy_revision` is an identifier.
 - [examples/compose_monitor/](examples/compose_monitor/) is a complete host package of this kind,
   configured from `MONITOR_*` settings, with its entry-point declaration in its `pyproject.toml`.
-- `engine_available()` reports whether the engine's host interface can be imported.
+- `engine_available()` reports whether the engine's host interface can be imported;
+  `engine_available(watches=True)` also checks the parts declared watches need.
   [tests/test_engine_live.py](tests/test_engine_live.py) is the agreement check between an SDK
   version and an engine version in an ApexAi-operated environment; it is skipped everywhere else,
   including this repository's CI.

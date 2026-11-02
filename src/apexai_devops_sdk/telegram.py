@@ -76,6 +76,8 @@ def render(notice: AttentionNotice) -> str:
 
     if notice.attention_kind in LIVE_KINDS:
         status = f"is still {notice.decision_state} after repeated failed attempts"
+    elif notice.settled_at is None:
+        status = f"is {notice.decision_state}, not settled"
     else:
         status = f"settled {notice.decision_state}"
     lines = [

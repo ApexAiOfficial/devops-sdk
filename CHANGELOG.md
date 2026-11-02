@@ -4,19 +4,22 @@ All notable changes to this SDK. The format follows [Keep a Changelog](https://k
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, a minor version may
 change the API).
 
-## 0.2.0 (2026-11-01)
+## 0.2.0 (2026-11-02)
 
 ### Added
 - `contract.Watch`: one look a monitor declares (target, predicate, interval of 1 s to 1 day).
 - `engine.read_only_host_wiring(watches=..., max_unconfirmed_retirements=1)`: a monitor declares
-  its complete set of watches; the engine reconciles it once at start, authorized for that set
-  only, and retires watches no longer declared (more than the bound wait for confirmation). Needs
-  an engine whose runtime reconciles a host's watch inventory; an older one raises
+  its complete set of watches (an empty set included; `None`, the default, declares none). The
+  engine reconciles it once at start, as this monitor, from the monitor's own inventory source
+  (`engine.watch_source_id`), and retires watches no longer declared, at most the bound without
+  confirmation. Needs an engine that reconciles a host's watch inventory; an older one raises
   `EngineUnavailable`.
+- `engine.engine_available(watches=True)` also checks the parts declared watches need.
 
 ### Changed
 - `telegram.render`: a `repeated_failure` notice is about a decision that has not settled; it now
-  reads "is still <state> after repeated failed attempts", never "settled".
+  reads "is still <state> after repeated failed attempts", and any other notice without
+  `settled_at` reads "is <state>, not settled". Neither says "settled".
 
 ## 0.1.1 (2026-10-29)
 

@@ -16,7 +16,7 @@ import pytest
 
 pytest.importorskip("apexai_ops.runtime.wiring", reason="the DevOps engine is not installed")
 
-from apexai_devops_sdk import Outcome
+from apexai_devops_sdk import Outcome, Watch
 from apexai_devops_sdk import engine as bridge
 from apexai_devops_sdk.compose import ComposeHealthAdapter, ComposeService
 from apexai_devops_sdk.telegram import TelegramAttentionSink
@@ -76,3 +76,39 @@ def test_the_sink_takes_the_engine_s_own_payload(tmp_path: Path) -> None:
         controller_id=CONTROLLER, policy_revision="r1", attention_sink=sink,
     )  # fmt: skip
     assert wiring.attention_sink is sink
+
+
+def test_the_engine_takes_the_declared_watches() -> None:
+    """The real engine's types and rules agree with what the bridge builds for declared watches."""
+
+    from apexai_ops.control.rearm import WatchAct, is_safe_attribution_id
+    from apexai_ops.control.supervision import inventory_set_digest
+
+    assert bridge.engine_available(watches=True)
+    watches = (Watch("web", "service_running", 60), Watch("api", "service_healthy", 30))
+    wiring = bridge.read_only_host_wiring(
+        ComposeHealthAdapter({"web": ComposeService("example", "app")}),
+        controller_id=CONTROLLER,
+        policy_revision="r1",
+        watches=watches,
+    )
+    snapshot = wiring.watch_inventory.snapshot()
+    assert snapshot.set_digest == inventory_set_digest(snapshot.declared_watches)
+    assert is_safe_attribution_id(snapshot.source_id), snapshot.source_id
+    assert is_safe_attribution_id(snapshot.complete_snapshot_token)
+    decide = wiring.watch_authorizer.authorize_watch
+    assert decide(
+        actor_id=CONTROLLER, target_id="web", detection_predicate_id="service_running",
+        act=WatchAct.DECLARE,
+    ).authorized  # fmt: skip
+    assert not decide(
+        actor_id=CONTROLLER, target_id="web", detection_predicate_id="service_running",
+        act=WatchAct.RETIRE,
+    ).authorized  # fmt: skip
+    empty = bridge.read_only_host_wiring(
+        ComposeHealthAdapter({"web": ComposeService("example", "app")}),
+        controller_id=CONTROLLER,
+        policy_revision="r1",
+        watches=(),
+    )
+    assert empty.watch_inventory.snapshot().declared_watches == ()

@@ -51,9 +51,11 @@ _INVENTORY = "apexai_ops.control.inventory"
 _REARM = "apexai_ops.control.rearm"
 _SUPERVISION = "apexai_ops.control.supervision"
 
-WATCH_SOURCE_ID: Final = "sdk-declared"
-"""The inventory source a monitor's declared watches come from. Stable across
-restarts, so the engine applies a changed set as the same source's update."""
+WATCH_SOURCE_PREFIX: Final = "sdk-"
+"""Each monitor's watches come from its own inventory source, ``sdk-`` and the first 24
+hex digits of its controller id. Stable across restarts, so the engine applies a
+changed set as the same source's update; another monitor's set is another source,
+whose removals the engine never applies without confirmation."""
 
 WATCH_AUTHORIZER_ID: Final = "sdk-declared-watches"
 """Who decided a declared watch, as the engine records it: the monitor's own list."""
@@ -76,15 +78,30 @@ def _module(name: str) -> ModuleType:
         raise EngineUnavailable("the DevOps engine is installed but failed to import") from broken
 
 
-def engine_available() -> bool:
-    """Whether every part of the engine's host interface this module uses can be imported."""
+def engine_available(*, watches: bool = False) -> bool:
+    """Whether the parts of the engine's host interface a monitor uses can be imported.
 
+    With ``watches=True``, also the parts that declared watches need (an older
+    engine has the rest, and :func:`read_only_host_wiring` refuses it watches).
+    """
+
+    names: tuple[str, ...] = (_OBSERVATION, _AUTHORITY, _REGISTRY, _WIRING)
+    if watches:
+        names += (_INVENTORY, _REARM, _SUPERVISION)
     try:
-        for name in (_OBSERVATION, _AUTHORITY, _REGISTRY, _WIRING):
+        for name in names:
             _module(name)
     except EngineUnavailable:
         return False
     return True
+
+
+def watch_source_id(controller_id: str) -> str:
+    """The inventory source of the monitor ``controller_id``'s declared watches."""
+
+    if not CONTROLLER_ID.fullmatch(controller_id):
+        raise ContractError("engine: controller_id must be ctl_ and 32 hex digits")
+    return WATCH_SOURCE_PREFIX + controller_id[4:28]
 
 
 def to_engine_observation(observation: Observation) -> Any:
@@ -197,12 +214,14 @@ class EngineTargetAdapter:
 
 
 class _DeclaredWatchAuthorizer:
-    """The engine's watch authorizer for a monitor's own declared set, and nothing else.
+    """The engine's watch authorizer for a monitor's own declared set.
 
-    It authorizes the monitor's own machine actor to declare exactly the
-    declared watches, and to retire any watch no longer declared (so a store
-    removed from the monitor's settings stops being watched). Every other
-    actor, and every other act, is refused.
+    It authorizes only the monitor's own machine actor: to declare exactly the
+    declared watches, and to retire a watch that is not declared. The engine
+    asks about retirement only for the store's watches missing from this
+    monitor's snapshot. It applies such retirements without confirmation only
+    from the source it accepted, within the retirement bound; it stages the
+    rest for confirmation. Every other actor, and every other act, is refused.
     """
 
     def __init__(self, controller_id: str, declared: frozenset[tuple[str, str]]) -> None:
@@ -227,7 +246,8 @@ class _DeclaredWatchAuthorizer:
 class _DeclaredWatchInventory:
     """The monitor's declared watches as one complete snapshot, read once at start."""
 
-    def __init__(self, watches: tuple[Watch, ...]) -> None:
+    def __init__(self, watches: tuple[Watch, ...], source_id: str) -> None:
+        self._source = source_id
         self._items = tuple(
             sorted((w.target_id, w.predicate_id, float(w.interval_seconds)) for w in watches)
         )
@@ -236,7 +256,7 @@ class _DeclaredWatchInventory:
 
     def snapshot(self) -> Any:
         return self._inventory.WatchInventorySnapshot(
-            source_id=WATCH_SOURCE_ID,
+            source_id=self._source,
             # Fresh per read: the engine refuses a token an earlier reconciliation presented.
             # A short lowercase label (at most 32 characters), as the engine's
             # durable-identifier rule requires.
@@ -254,7 +274,7 @@ def read_only_host_wiring(
     controller_id: str,
     policy_revision: str,
     attention_sink: AttentionSink | None = None,
-    watches: Iterable[Watch] = (),
+    watches: Iterable[Watch] | None = None,
     max_unconfirmed_retirements: int = 1,
 ) -> Any:
     """The engine's host wiring for a monitor that observes and alerts, and never acts.
@@ -266,12 +286,12 @@ def read_only_host_wiring(
     raises for wiring it refuses.
 
     ``watches`` is the monitor's complete set of looks (:class:`Watch`). When
-    given, the engine reconciles it once at start: it declares each watch, as
-    this monitor's own machine actor and authorized only for this set, and
-    retires watches no longer in it, at most ``max_unconfirmed_retirements``
-    at a time (more are held for confirmation, so a settings mistake cannot
-    silently stop watching a fleet). Needs an engine whose runtime reconciles
-    a host's watch inventory; an older one refuses the wiring.
+    given, even empty, the engine reconciles it once at start: it declares
+    each watch as this monitor's own machine actor, and retires watches no
+    longer in the set, at most ``max_unconfirmed_retirements`` at a time
+    without confirmation. ``None`` (the default) declares no inventory at
+    all, and changes no watch. Watches need an engine that reconciles a host's
+    watch inventory; with an older one this raises :class:`EngineUnavailable`.
     """
 
     if not CONTROLLER_ID.fullmatch(controller_id):
@@ -280,11 +300,14 @@ def read_only_host_wiring(
         raise ContractError("engine: policy_revision must be an identifier")
     if attention_sink is not None and not isinstance(attention_sink, AttentionSink):
         raise ContractError("engine: attention_sink does not implement AttentionSink")
-    declared = tuple(watches)
-    if any(type(watch) is not Watch for watch in declared):
+    try:
+        declared = None if watches is None else tuple(watches)
+    except TypeError:
+        raise ContractError("engine: watches must be an iterable of Watch values") from None
+    if declared is not None and any(type(watch) is not Watch for watch in declared):
         raise ContractError("engine: watches must be Watch values")
-    keys = frozenset((w.target_id, w.predicate_id) for w in declared)
-    if len(keys) != len(declared):
+    keys = frozenset((w.target_id, w.predicate_id) for w in declared or ())
+    if declared is not None and len(keys) != len(declared):
         raise ContractError("engine: a watch is declared twice")
     if (
         isinstance(max_unconfirmed_retirements, bool)
@@ -296,12 +319,12 @@ def read_only_host_wiring(
     registry = _module(_REGISTRY)
     wiring = _module(_WIRING)
     inventory: dict[str, Any] = {}
-    if declared:
+    if declared is not None:
         if "watch_inventory" not in getattr(wiring.HostWiring, "__dataclass_fields__", {}):
             raise EngineUnavailable("this DevOps engine cannot reconcile a host's watches")
         inventory = {
             "watch_authorizer": _DeclaredWatchAuthorizer(controller_id, keys),
-            "watch_inventory": _DeclaredWatchInventory(declared),
+            "watch_inventory": _DeclaredWatchInventory(declared, watch_source_id(controller_id)),
             "inventory_retirement_bound": max_unconfirmed_retirements,
         }
     return wiring.HostWiring(

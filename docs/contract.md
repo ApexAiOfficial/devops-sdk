@@ -55,15 +55,16 @@ alone decides whether, when and under what authority it runs, and then observes
 
 One look the engine owes on cadence: `target_id` and `predicate_id` (identifiers) and
 `interval_seconds` (explicit, finite, 1 to 86400). A monitor passes its **complete** set to
-`read_only_host_wiring(..., watches=[...])`. At start the engine declares each watch, authorized
-for that monitor's own set only, and stops watching a target removed from the set (one at a time
-by default, `max_unconfirmed_retirements`). A watch grants nothing: it never authorizes a remedy,
-and the engine may refuse an interval its deployment does not allow.
+`read_only_host_wiring(..., watches=[...])`. At start the engine declares each watch as that
+monitor, and stops watching a target removed from the set, at most `max_unconfirmed_retirements`
+(default 1) without confirmation. An empty set is a set; leaving `watches` out declares nothing.
+A watch grants nothing: it never authorizes a remedy, and the engine may refuse an interval its
+deployment does not allow.
 
 ## Attention: `AttentionSink` and `AttentionNotice`
 
-When a decision needs a person (a blocker, a recovery that could not finish, or a target that has
-kept failing for long enough: `repeated_failure`), the engine offers an
+When a decision needs a person (a blocker, a recovery that could not finish, or a decision that
+has not settled and keeps failing: `repeated_failure`), the engine offers an
 `AttentionNotice` to your sink: identifiers, closed words and timestamps only, never adapter text.
 
 `offer(payload)` returns `accepted`, `refused` or `failed`:

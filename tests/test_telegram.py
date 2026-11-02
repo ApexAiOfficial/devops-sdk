@@ -222,3 +222,11 @@ def test_a_live_kind_is_never_rendered_as_settled() -> None:
     assert "reason: remedy_unresolvable" in text, text
     settled = render(AttentionNotice.from_payload(_notice()))
     assert "settled blocked" in settled, settled
+
+
+def test_a_notice_without_settled_at_is_never_rendered_as_settled() -> None:
+    """The notice's own ``settled_at`` decides, for any kind: absent, nothing has settled."""
+
+    open_notice = dict(_notice(), settled_at=None)
+    text = render(AttentionNotice.from_payload(open_notice))
+    assert "settled blocked" not in text and "is blocked, not settled" in text, text
