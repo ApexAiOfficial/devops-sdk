@@ -280,6 +280,14 @@ Every member must be bounded and read-only, safe to call in a forked child, and 
 for the target's sake: when it cannot tell, it returns `UNOBSERVABLE` with a reason code. It must
 not copy logs, error output, environment values or response bodies into an observation.
 
+**Watch your source too.** `UNOBSERVABLE` is never acted on, and it never raises attention: a
+target whose every look is unobservable is silent, not broken. If what you read can stop
+answering (a status file nobody refreshes any more, an API that is down), give that source a
+predicate of its own that is conclusively broken when the source is stale or gone, and declare a
+watch for it. For example, `status_fresh` answers `OBSERVED_BROKEN` when the status file is older
+than its bound, and `OBSERVED_HEALTHY` otherwise. A dead source then becomes a decision and a
+notice, instead of a monitor that has quietly stopped seeing.
+
 This adapter watches queue backlogs through a reader you supply:
 
 ```python
@@ -537,9 +545,19 @@ def runtime():
 ```
 
 `watches` is the monitor's complete set. The engine declares each one at start, as this monitor,
-and stops watching a target removed from it, at most `max_unconfirmed_retirements` (default 1)
-without confirmation. An empty set is a set: it stops watching everything this monitor declared,
-within that bound. Leaving `watches` out declares nothing and changes nothing. A sink can be
+and stops watching a watch removed from it. Three rules decide what a removal does:
+
+- **`max_unconfirmed_retirements` (default 1) counts watches, not targets.** When one start would
+  remove more watches than that, the engine removes none of them: they wait for a confirmation,
+  which this wiring cannot give, so they stay watched until a start whose bound covers them all.
+  Set it to the number of watches you declare per target (2 in the example above), so that
+  removing one target takes effect at the next start. Keep it small: it is what stops a settings
+  mistake from silently ending the watch on a whole fleet.
+- **A monitor must watch something.** The engine refuses to start a monitor whose set is empty.
+  To stop watching everything, stop the monitor.
+- **Leaving `watches` out** declares nothing and changes nothing.
+
+A sink can be
 offered a `repeated_failure` notice about a decision that has not settled; `telegram.render`
 says so rather than "settled".
 

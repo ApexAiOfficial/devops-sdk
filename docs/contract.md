@@ -28,6 +28,10 @@ Every member runs inside the engine's time bound, possibly in a forked child pro
   cannot tell, return `UNOBSERVABLE` with a closed reason code.
 - **Never guess.** Only `OBSERVED_BROKEN` can lead to a decision. A value you do not recognise is
   `UNOBSERVABLE`, not broken and not healthy.
+- **Watch your source too.** `UNOBSERVABLE` never raises attention, so a target whose every look
+  is unobservable is silent. If your source can stop answering, give it its own predicate that is
+  conclusively broken when the source is stale or gone (a status file older than its bound, say),
+  and declare a watch for it.
 - **Echo nothing.** `detail` holds closed words and small primitives only (at most 4 KiB as JSON).
   Logs, error output, environment and response bodies can hold secrets, and observations may be
   shown to operators.
@@ -56,8 +60,11 @@ alone decides whether, when and under what authority it runs, and then observes
 One look the engine owes on cadence: `target_id` and `predicate_id` (identifiers) and
 `interval_seconds` (explicit, finite, 1 to 86400). A monitor passes its **complete** set to
 `read_only_host_wiring(..., watches=[...])`. At start the engine declares each watch as that
-monitor, and stops watching a target removed from the set, at most `max_unconfirmed_retirements`
-(default 1) without confirmation. An empty set is a set; leaving `watches` out declares nothing.
+monitor, and stops watching a watch removed from the set. `max_unconfirmed_retirements`
+(default 1) counts watches, not targets: when one start would remove more than that, the engine
+removes none, and they stay watched, because this wiring cannot confirm a removal. Set it to the
+number of watches you declare per target. The engine refuses to start a monitor whose set is
+empty; leaving `watches` out declares nothing.
 A watch grants nothing: it never authorizes a remedy, and the engine may refuse an interval its
 deployment does not allow.
 

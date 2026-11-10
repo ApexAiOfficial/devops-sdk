@@ -225,8 +225,10 @@ class _DeclaredWatchAuthorizer:
     declared watches, and to retire a watch that is not declared. The engine
     asks about retirement only for the store's watches missing from this
     monitor's snapshot. It applies such retirements without confirmation only
-    from the source it accepted, within the retirement bound; it stages the
-    rest for confirmation. Every other actor, and every other act, is refused.
+    from the source it accepted, and only when all of them fit within the
+    retirement bound; otherwise it applies none and keeps them for a
+    confirmation this wiring does not give. Every other actor, and every
+    other act, is refused.
     """
 
     def __init__(self, controller_id: str, declared: frozenset[tuple[str, str]]) -> None:
@@ -291,12 +293,16 @@ def read_only_host_wiring(
     raises for wiring it refuses.
 
     ``watches`` is the monitor's complete set of looks (:class:`Watch`). When
-    given, even empty, the engine reconciles it once at start: it declares
-    each watch as this monitor's own machine actor, and retires watches no
-    longer in the set, at most ``max_unconfirmed_retirements`` at a time
-    without confirmation. ``None`` (the default) declares no inventory at
-    all, and changes no watch. Watches need an engine that reconciles a host's
-    watch inventory; with an older one this raises :class:`EngineUnavailable`.
+    given, the engine reconciles it once at start: it declares each watch as
+    this monitor's own machine actor, and retires the watches no longer in
+    the set. ``max_unconfirmed_retirements`` counts watches, not targets:
+    when one start would retire more than that, the engine retires none of
+    them and keeps them for a confirmation, which this wiring cannot give, so
+    they stay watched. Set it to the number of watches declared per target.
+    The engine refuses to start a monitor whose set is empty. ``None`` (the
+    default) declares no inventory at all, and changes no watch. Watches need
+    an engine that reconciles a host's watch inventory; with an older one
+    this raises :class:`EngineUnavailable`.
     """
 
     if not CONTROLLER_ID.fullmatch(controller_id):
