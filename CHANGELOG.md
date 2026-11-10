@@ -4,6 +4,18 @@ All notable changes to this SDK. The format follows [Keep a Changelog](https://k
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, a minor version may
 change the API).
 
+## Unreleased
+
+### Documentation
+- `max_unconfirmed_retirements` counts watches, not targets. When one start would remove more
+  watches than the bound, the engine removes none of them, and they stay watched: this wiring
+  cannot confirm a removal. The README, `docs/contract.md` and the docstrings now say so, and
+  advise setting the bound to the number of watches declared per target.
+- An empty watch set is not reconciled: the engine refuses to start a monitor that declares
+  none. The earlier text said it stopped watching everything.
+- Adapters: `UNOBSERVABLE` never raises attention, so a source that can stop answering needs a
+  predicate of its own that is conclusively broken when the source is stale or gone.
+
 ## 0.2.0 (2026-11-02)
 
 ### Added
