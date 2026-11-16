@@ -14,13 +14,23 @@ change the API).
   `OperatorDecision` is a refusal (`sdk-invalid-answer`), and an engine without the slot raises `EngineUnavailable`.
   The policy still allows nothing. See `docs/contract.md`, "Operator acts".
 
+### Changed
+- `read_only_host_wiring(watches=())` raises `ContractError` at once: the engine refuses to start a monitor whose
+  set is empty, and now the SDK says so before it starts. `None` still declares no inventory.
+- `contract.AUTHORIZER_ID` itself bounds a label to 32 characters, as its docstring said.
+- `engine.engine_available()` answers `False` for an engine whose wiring module has no `HostWiring`, and raises
+  `ContractError`, never `TypeError`, for an `authorizers` entry that is not a slot's name.
+
 ### Documentation
+- How an authorizer runs: in the engine's own process, under the lock every act and cycle waits on, unbounded,
+  so it answers from approvals collected beforehand and never opens the engine's state. What the inventory
+  confirmation's `inventory_generation` and `retirement_count` are. See `docs/contract.md`, "Operator acts".
 - A collaborator never opens the engine's database or evidence, and never reads the engine through its
   inspection interface, inside a call the engine makes to it: such a call can run in a forked child. A sink's
   `offer` follows the adapter rules too. See `docs/contract.md`.
 - `max_unconfirmed_retirements` counts watches, not targets. When one start would remove more
-  watches than the bound, the engine removes none of them, and they stay watched: this wiring
-  cannot confirm a removal. The README, `docs/contract.md` and the docstrings now say so, and
+  watches than the bound, the engine removes none of them, and they stay watched until an
+  `inventory_confirmation_authorizer` confirms the removal (without one, they stay watched). The README, `docs/contract.md` and the docstrings now say so, and
   advise setting the bound to the number of watches declared per target.
 - An empty watch set is not reconciled: the engine refuses to start a monitor that declares
   none. The earlier text said it stopped watching everything.

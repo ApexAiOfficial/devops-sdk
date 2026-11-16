@@ -14,7 +14,6 @@ from typing import Any
 import pytest
 from test_engine_bridge import (  # noqa: F401 - the stand-in's fixtures, used by name
     CONTROLLER,
-    _HostWiring,
     _RearmDecision,
     _WatchHostWiring,
     stand_in,
@@ -223,3 +222,27 @@ def test_engine_available_asks_for_the_slots(
     assert not bridge.engine_available(authorizers=["retirement_authorizer"])
     with pytest.raises(ContractError, match="not_a_slot"):
         bridge.engine_available(authorizers=["not_a_slot"])
+
+
+@pytest.mark.parametrize("name", [object(), ["retirement_authorizer"], 7])
+def test_engine_available_refuses_a_name_that_is_not_a_slot(name: object) -> None:
+    with pytest.raises(ContractError, match="not an operator-act authorizer"):
+        bridge.engine_available(authorizers=[name])  # type: ignore[list-item]
+
+
+def test_engine_available_answers_false_without_a_host_wiring(
+    operator_stand_in: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delattr(sys.modules["apexai_ops.runtime.wiring"], "HostWiring")
+    assert not bridge.engine_available(authorizers=["retirement_authorizer"])
+    assert not bridge.engine_available(watches=True)
+
+
+def test_the_label_pattern_itself_bounds_the_length() -> None:
+    from apexai_devops_sdk.contract import AUTHORIZER_ID
+
+    assert AUTHORIZER_ID.fullmatch("a" * 32)
+    assert not AUTHORIZER_ID.fullmatch("a" * 33)
+    assert not AUTHORIZER_ID.fullmatch("on-")
+    assert not AUTHORIZER_ID.fullmatch("on--call")
+    assert AUTHORIZER_ID.fullmatch("on-call-2")

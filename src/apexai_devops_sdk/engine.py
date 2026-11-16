@@ -95,9 +95,14 @@ def engine_available(*, watches: bool = False, authorizers: Iterable[str] = ()) 
     """
 
     wanted = tuple(authorizers)
-    unknown = [slot for slot in wanted if slot not in OPERATOR_AUTHORIZER_SLOTS]
+    unknown = [
+        slot
+        for slot in wanted
+        if not isinstance(slot, str) or slot not in OPERATOR_AUTHORIZER_SLOTS
+    ]
     if unknown:
-        raise ContractError(f"engine: not an operator-act authorizer: {', '.join(unknown)}")
+        named = ", ".join(repr(slot) for slot in unknown)
+        raise ContractError(f"engine: not an operator-act authorizer: {named}")
     names: tuple[str, ...] = (_OBSERVATION, _AUTHORITY, _REGISTRY, _WIRING)
     if watches:
         names += (_INVENTORY, _REARM, _SUPERVISION)
@@ -109,14 +114,18 @@ def engine_available(*, watches: bool = False, authorizers: Iterable[str] = ()) 
     except EngineUnavailable:
         return False
     wiring = _module(_WIRING)
-    slots = getattr(wiring.HostWiring, "__dataclass_fields__", {})
+    slots = _wiring_fields(wiring)
     if any(slot not in slots for slot in wanted):
         return False
     return not watches or _reconciles_watches(wiring)
 
 
+def _wiring_fields(wiring: ModuleType) -> Any:
+    return getattr(getattr(wiring, "HostWiring", None), "__dataclass_fields__", {})
+
+
 def _reconciles_watches(wiring: ModuleType) -> bool:
-    return "watch_inventory" in getattr(wiring.HostWiring, "__dataclass_fields__", {})
+    return "watch_inventory" in _wiring_fields(wiring)
 
 
 def watch_source_id(controller_id: str) -> str:
@@ -245,8 +254,8 @@ class _DeclaredWatchAuthorizer:
     monitor's snapshot. It applies such retirements without confirmation only
     from the source it accepted, and only when all of them fit within the
     retirement bound; otherwise it applies none and keeps them for a
-    confirmation this wiring does not give. Every other actor, and every
-    other act, is refused.
+    confirmation, which only ``inventory_confirmation_authorizer`` can give.
+    Every other actor, and every other act, is refused.
     """
 
     def __init__(self, controller_id: str, declared: frozenset[tuple[str, str]]) -> None:
@@ -426,11 +435,12 @@ def read_only_host_wiring(
     this monitor's own machine actor, and retires the watches no longer in
     the set. ``max_unconfirmed_retirements`` counts watches, not targets:
     when one start would retire more than that, the engine retires none of
-    them and keeps them for a confirmation, which this wiring cannot give, so
-    they stay watched, unless ``inventory_confirmation_authorizer`` confirms
-    them. Set it to the number of watches declared per target.
-    The engine refuses to start a monitor whose set is empty. ``None`` (the
-    default) declares no inventory at all, and changes no watch. Watches need
+    them and keeps them for a confirmation: they stay watched until
+    ``inventory_confirmation_authorizer`` confirms them, and without one they
+    stay watched. Set it to the number of watches declared per target.
+    An empty set raises :class:`ContractError`, since the engine refuses to
+    start a monitor whose set is empty. ``None`` (the default) declares no
+    inventory at all, and changes no watch. Watches need
     an engine that reconciles a host's watch inventory; with an older one
     this raises :class:`EngineUnavailable`.
 
@@ -461,6 +471,8 @@ def read_only_host_wiring(
         raise ContractError("engine: watches must be an iterable of Watch values") from None
     if declared is not None and any(type(watch) is not Watch for watch in declared):
         raise ContractError("engine: watches must be Watch values")
+    if declared == ():
+        raise ContractError("engine: watches is empty: declare at least one, or pass None")
     keys = frozenset((w.target_id, w.predicate_id) for w in declared or ())
     if declared is not None and len(keys) != len(declared):
         raise ContractError("engine: a watch is declared twice")

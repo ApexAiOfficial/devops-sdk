@@ -16,7 +16,7 @@ import pytest
 
 pytest.importorskip("apexai_ops.runtime.wiring", reason="the DevOps engine is not installed")
 
-from apexai_devops_sdk import Outcome, Watch
+from apexai_devops_sdk import ContractError, Outcome, Watch
 from apexai_devops_sdk import engine as bridge
 from apexai_devops_sdk.compose import ComposeHealthAdapter, ComposeService
 from apexai_devops_sdk.telegram import TelegramAttentionSink
@@ -105,13 +105,13 @@ def test_the_engine_takes_the_declared_watches() -> None:
         actor_id=CONTROLLER, target_id="web", detection_predicate_id="service_running",
         act=WatchAct.RETIRE,
     ).authorized  # fmt: skip
-    empty = bridge.read_only_host_wiring(
-        ComposeHealthAdapter({"web": ComposeService("example", "app")}),
-        controller_id=CONTROLLER,
-        policy_revision="r1",
-        watches=(),
-    )
-    assert empty.watch_inventory.snapshot().declared_watches == ()
+    with pytest.raises(ContractError, match="watches is empty"):
+        bridge.read_only_host_wiring(
+            ComposeHealthAdapter({"web": ComposeService("example", "app")}),
+            controller_id=CONTROLLER,
+            policy_revision="r1",
+            watches=(),
+        )
 
 
 def test_the_engine_takes_the_operator_authorizers() -> None:

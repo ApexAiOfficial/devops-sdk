@@ -109,7 +109,8 @@ than `max_unconfirmed_retirements` allows. You decide each one; the engine recor
 | `clearance_authorizer` | `authorize_clearance` | `actor_id`, `target_id`, `work_id` |
 | `inventory_confirmation_authorizer` | `authorize_inventory_retirement` | `actor_id`, `source_id`, `inventory_generation`, `retirement_count` |
 
-Each method answers an `OperatorDecision(authorized, authorizer_id, actor_kind="human")`:
+Each method answers an `OperatorDecision(authorized, authorizer_id, actor_kind="human")`, that class itself (a
+subclass is refused):
 
 - `authorized`: a `bool`;
 - `authorizer_id`: the authority that decided (your policy, your rota), never the person; a short lowercase label,
@@ -118,9 +119,20 @@ Each method answers an `OperatorDecision(authorized, authorizer_id, actor_kind="
   attributions use;
 - `actor_kind`: the kind of the actor who asked (the question's `actor_id`), `human` or `service`.
 
-Anything else your method returns is a refusal. **If your method raises, the act fails and nothing is done.** The
-engine asks while it performs the act and waits for your answer: answer promptly from your own state, never by
-waiting on a person or a network call that can hang. An authorizer must be an instance, not a class.
+Anything else your method returns is a refusal. **If your method raises, the act fails and nothing is done**; the
+engine records only the exception's class, never its text. An authorizer must be an instance, not a class.
+
+**How an authorizer runs.** Unlike an adapter's members, it runs in the engine's own process, while the engine
+holds the lock that every other act and every autonomous cycle waits on, and the engine does not bound the call.
+So answer promptly from what your system already holds: collect a person's approval before the act is requested,
+and only look it up here; never wait on a person or a network call that can hang; never start a thread; and never
+open the engine's database or its evidence, or read the engine through its inspection interface, from inside the
+method.
+
+The inventory confirmation's arguments: `source_id` is the inventory source whose watches would go (below);
+`inventory_generation` is the number of the reconciliation that staged the retirement, one more at every start
+that reconciles; `retirement_count` is how many watches it would retire. A confirmation applies exactly that
+staged retirement.
 
 **Confirm only your own watches.** `authorize_inventory_retirement` is asked with the `source_id` whose watches
 would go. A monitor's own source is `engine.watch_source_id(controller_id)`; confirming any other source applies

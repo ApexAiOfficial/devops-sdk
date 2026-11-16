@@ -541,6 +541,7 @@ def runtime():
         attention_sink=sink,
         # The looks the engine owes, on cadence: the monitor's complete set, reconciled at start.
         watches=[Watch("web", "service_running", 60), Watch("web", "service_healthy", 60)],
+        max_unconfirmed_retirements=2,  # the watches declared per target (below)
     )
 ```
 
@@ -549,7 +550,7 @@ and stops watching a watch removed from it. Three rules decide what a removal do
 
 - **`max_unconfirmed_retirements` (default 1) counts watches, not targets.** When one start would
   remove more watches than that, the engine removes none of them: they wait for a confirmation.
-  Without an `inventory_confirmation_authorizer` (below) this wiring cannot give one, so they stay
+  An `inventory_confirmation_authorizer` gives one (see "Operator acts" below); without it they stay
   watched until a start whose bound covers them all.
   Set it to the number of watches you declare per target (2 in the example above), so that
   removing one target takes effect at the next start. Keep it small: it is what stops a settings
@@ -571,6 +572,12 @@ says so rather than "settled".
   [tests/test_engine_live.py](tests/test_engine_live.py) is the agreement check between an SDK
   version and an engine version in an ApexAi-operated environment; it is skipped everywhere else,
   including this repository's CI.
+- **Operator acts.** `retirement_authorizer`, `acknowledgement_authorizer`, `clearance_authorizer` and
+  `inventory_confirmation_authorizer` decide a person's acts on the monitor's store: retiring a decision,
+  acknowledging a notice, clearing a remedy's recorded failure, and confirming a large watch retirement. Each
+  answers an `OperatorDecision`; without one, its act is refused, and none lets the monitor act on a target.
+  `engine_available(authorizers=[...])` asks whether the engine has the slots. The rules, and how an authorizer
+  runs, are in [docs/contract.md](docs/contract.md), "Operator acts".
 
 ## Errors and troubleshooting
 

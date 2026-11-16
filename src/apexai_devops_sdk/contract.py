@@ -357,7 +357,7 @@ class AttentionSink(Protocol):
         ...
 
 
-AUTHORIZER_ID: Final = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
+AUTHORIZER_ID: Final = re.compile(r"[a-z](?:[a-z0-9]|-(?=[a-z0-9])){0,31}")
 """Who decided an operator act: a short lowercase label of at most 32 characters (no uppercase,
 underscore, dot or colon), the only shape the engine records as attribution."""
 
