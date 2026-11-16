@@ -1,8 +1,7 @@
-# Design note: a file-backed target fence (decided, not built)
+# Design note: a file-backed target fence
 
-**Status:** a design, decided and not built (its open questions are settled at the end). Nothing in this note is in
-the SDK yet, and nothing changes for a read-only
-host: a monitor that registers no remedy needs no fence.
+**Status:** decided, and built in `apexai_devops_sdk.fence` (2026-11-16; its open questions are settled at the
+end). Nothing changes for a read-only host: a monitor that registers no remedy needs no fence.
 
 ## What a fence is for
 
@@ -20,7 +19,7 @@ A fence answers three questions for a target identifier:
 | Question | Answer |
 |---|---|
 | Can this target hold a floor? | `True` or `False`. `False` means no remedy runs on it. |
-| Raise the floor to epoch *N*. | `True` when the floor is now *N*; `False` otherwise, and the floor is unchanged. It never lowers a floor. |
+| Raise the floor to epoch *N*. | `True` when the floor is now *N*, durably; `False` otherwise. It never lowers a floor. A `False` leaves the floor unchanged, with one exception: when making the new floor durable fails after it replaced the old one, the floor may already read *N*; a later raise to *N* then answers `True`. |
 | What is the floor now? | The integer, or `None` when there is none or it cannot be read. |
 
 And at commit: equal to the floor, commit; anything else, refuse.
@@ -63,8 +62,9 @@ with fence.committing(target_id, epoch):     # epoch: int(os.environ["OPS_OWNER_
   that mode, or writable by anyone but its owner; or when its **parent** is owned by anyone but root or `owner_uid`,
   or is writable by its group or others. The SDK never creates or widens either.
 - **Per target, two files**, both `0640`, owned by `owner_uid`:
-  - `<target>.lock`: created by the first raise with `O_CREAT | O_EXCL`, then the directory `fsync`ed; never
-    replaced or removed;
+  - `<target>.lock`: created by the first raise under a temporary name (`O_CREAT | O_EXCL`), given its mode, then
+    linked into place, so it never exists with another mode; then the directory is `fsync`ed. Never replaced or
+    removed;
   - `<target>.floor`: a decimal integer and a newline, at most 32 bytes, replaced whole (below).
 - The target identifier is validated by the contract's identifier rule (`[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`) before
   it names a file; any other value is refused.
@@ -82,7 +82,8 @@ with fence.committing(target_id, epoch):     # epoch: int(os.environ["OPS_OWNER_
    never replaced by a lower one. If the floor is above `epoch`, answer `False`; if it equals `epoch`, answer `True`.
 3. Otherwise write `epoch` to a new file with a unique name (`O_CREAT | O_EXCL`, mode `0640`) in the same directory,
    `fsync` it, `rename` it over `<target>.floor`, `fsync` the directory, release the lock and answer `True`. A
-   temporary file left by a crash is removed by the next raise, under the lock.
+   temporary file left by a crash is removed by the next raise, under the lock. If the directory's `fsync` fails
+   after the rename, answer `False`: the floor may already read `epoch`, and is never lower than before.
 
 `fence_floor` reads `<target>.floor` without the lock, capped at 32 bytes (the rename makes every read whole), and
 answers `None` for an absent, unreadable or malformed file.
@@ -129,7 +130,10 @@ remedy runs: that fails closed. Keep commit blocks short, and size `raise_wait_s
   filesystem type other than `ext4` or `xfs` makes `fence_capability` `False`;
 - a lock file or floor file owned by another account is a refusal on both sides;
 - a descriptor is not inherited by an exec'd child (`O_CLOEXEC`);
-- a temporary file left by a crashed raise is removed by the next raise;
+- a temporary file left by a crashed raise is removed by the next raise, and a lock file never exists with a mode
+  other than `0640`, whatever the umask;
+- a failed directory `fsync` after the rename answers `False`, the floor is never lower, and a raise to the same
+  epoch then answers `True`;
 - a target identifier outside the contract's rule is refused before any file is named.
 
 ## Decided (2026-11-16)
@@ -140,6 +144,9 @@ remedy runs: that fails closed. Keep commit blocks short, and size `raise_wait_s
   which only the host knows, and a default would hide that choice. Each must be a finite number above zero.
 - **`committing` logs nothing.** The SDK never logs; a host that wants a record of admitted commits writes it inside
   its own block, where it knows the change.
-- **No product needs it yet:** the read-only monitors run no remedy. It is built when the first product registers a
-  remedy on a target whose state lives in files on one host, with that product's commit block as its first test
-  case.
+- **No product needs it yet:** the read-only monitors run no remedy. It was built ahead of its first product
+  (2026-11-16) so that it lands reviewed; the first product that registers a remedy on a target whose state lives
+  in files on one host still brings its commit block as the fence's first integration test.
+- **The filesystem check reads only `/proc/self/mountinfo`.** No argument replaces that file: a check that a
+  caller can point elsewhere is not a check. The directory is opened relative to its checked parent's descriptor,
+  so the parent that was checked is the one it is in.
