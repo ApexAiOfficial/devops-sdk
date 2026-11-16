@@ -4,7 +4,7 @@ All notable changes to this SDK. The format follows [Keep a Changelog](https://k
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, a minor version may
 change the API).
 
-## Unreleased
+## 0.3.0 (2026-11-16)
 
 ### Added
 - Operator acts: `contract.OperatorDecision` and four authorizer protocols, `RetirementAuthorizer`,
