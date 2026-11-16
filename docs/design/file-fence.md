@@ -1,4 +1,4 @@
-# Design note: a file-backed target fence (proposal, not built)
+# Design note: a file-backed target fence (decided, not built)
 
 **Status:** a design, decided and not built (its open questions are settled at the end). Nothing in this note is in
 the SDK yet, and nothing changes for a read-only
@@ -25,10 +25,10 @@ A fence answers three questions for a target identifier:
 
 And at commit: equal to the floor, commit; anything else, refuse.
 
-## The proposal: `FileFence`
+## The design: `FileFence`
 
 For a system whose state already lives in files on one host (a reconciler with a state file per target, a fleet
-manager writing status files), the floor can be a file too. Proposed API, in a new module
+manager writing status files), the floor can be a file too. The API, in a new module
 `apexai_devops_sdk.fence`:
 
 ```python
