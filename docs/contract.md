@@ -86,3 +86,28 @@ Offers are **at least once**: the same notice can arrive again after a crash. De
 `notification_id` (`ntf_` followed by hex digits) in durable storage, not memory.
 `AttentionNotice.from_payload` reads the notice from the engine's payload, a mapping, or any object
 with the fields.
+
+## Operator acts: `OperatorDecision` and the four authorizers
+
+Some acts on a monitor's store are a person's, not the monitor's: retiring one of the engine's decisions about a
+target, acknowledging a notice, clearing a remedy's recorded failure, and confirming a retirement of more watches
+than `max_unconfirmed_retirements` allows. You decide each one; the engine records only who decided. Give
+`read_only_host_wiring` an authorizer for each act you allow; without one, that act is refused.
+
+| Argument | Its one method | Asked with |
+|---|---|---|
+| `retirement_authorizer` | `authorize_retirement` | `actor_id`, `target_id`, `work_id` |
+| `acknowledgement_authorizer` | `authorize_acknowledgement` | `actor_id`, `target_id`, `work_id` |
+| `clearance_authorizer` | `authorize_clearance` | `actor_id`, `target_id`, `work_id` |
+| `inventory_confirmation_authorizer` | `authorize_inventory_retirement` | `actor_id`, `source_id`, `inventory_generation`, `retirement_count` |
+
+Each method answers an `OperatorDecision(authorized, authorizer_id, actor_kind="human")`:
+
+- `authorized`: a `bool`;
+- `authorizer_id`: the authority that decided (your policy, your rota), never the person; a short lowercase label
+  (`[a-z][a-z0-9]*` with `-` between parts, at most 32 characters), because it is recorded and shown;
+- `actor_kind`: `human` or `service`.
+
+Anything else your method returns is a refusal. An authorizer must be an instance, not a class. None of them lets
+the monitor act on a target: its policy still allows nothing. An engine without the slot for an authorizer you give
+raises `EngineUnavailable`.

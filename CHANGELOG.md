@@ -6,6 +6,14 @@ change the API).
 
 ## Unreleased
 
+### Added
+- Operator acts: `contract.OperatorDecision` and four authorizer protocols, `RetirementAuthorizer`,
+  `AcknowledgementAuthorizer`, `ClearanceAuthorizer` and `InventoryConfirmationAuthorizer`.
+  `engine.read_only_host_wiring` takes each as an optional argument of the same name in snake case and passes it to
+  the engine in the engine's own type; without one, that act is refused. An answer that is not an
+  `OperatorDecision` is a refusal (`sdk-invalid-answer`), and an engine without the slot raises `EngineUnavailable`.
+  The policy still allows nothing. See `docs/contract.md`, "Operator acts".
+
 ### Documentation
 - `max_unconfirmed_retirements` counts watches, not targets. When one start would remove more
   watches than the bound, the engine removes none of them, and they stay watched: this wiring

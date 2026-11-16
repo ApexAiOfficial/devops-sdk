@@ -355,3 +355,75 @@ class AttentionSink(Protocol):
     def offer(self, payload: Any) -> str:
         """Deliver one notice; answer ``accepted``, ``refused`` or ``failed``."""
         ...
+
+
+AUTHORIZER_ID: Final = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
+"""Who decided an operator act: a short lowercase label of at most 32 characters (no uppercase,
+underscore, dot or colon), the only shape the engine records as attribution."""
+
+ACTOR_KINDS: Final = frozenset({"human", "service"})
+"""What kind of actor asked: an accountable person, or a service acting on somebody's behalf."""
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorDecision:
+    """Your answer to one operator act: whether this actor may do it, and who decided.
+
+    ``authorizer_id`` names the authority that decided (your policy, your on-call
+    rota), never the person: the person is the ``actor_id`` the question carries.
+    It must match :data:`AUTHORIZER_ID` and be at most 32 characters, so that it
+    can be recorded and shown without carrying anything else. Explain a refusal
+    in your own audit log; nothing here carries free text.
+    """
+
+    authorized: bool
+    authorizer_id: str
+    actor_kind: str = "human"
+
+    def __post_init__(self) -> None:
+        if type(self.authorized) is not bool:
+            raise ContractError("OperatorDecision.authorized must be a bool")
+        if (
+            not isinstance(self.authorizer_id, str)
+            or len(self.authorizer_id) > 32
+            or not AUTHORIZER_ID.fullmatch(self.authorizer_id)
+        ):
+            raise ContractError("OperatorDecision.authorizer_id must be a short lowercase label")
+        if self.actor_kind not in ACTOR_KINDS:
+            raise ContractError("OperatorDecision.actor_kind must be 'human' or 'service'")
+
+
+@runtime_checkable
+class RetirementAuthorizer(Protocol):
+    """Decides whether an actor may retire one of the engine's decisions about a target."""
+
+    def authorize_retirement(
+        self, *, actor_id: str, target_id: str, work_id: str
+    ) -> OperatorDecision: ...
+
+
+@runtime_checkable
+class AcknowledgementAuthorizer(Protocol):
+    """Decides whether an actor may acknowledge an attention notice about a target."""
+
+    def authorize_acknowledgement(
+        self, *, actor_id: str, target_id: str, work_id: str
+    ) -> OperatorDecision: ...
+
+
+@runtime_checkable
+class ClearanceAuthorizer(Protocol):
+    """Decides whether an actor may clear a remedy's recorded failure on a target."""
+
+    def authorize_clearance(
+        self, *, actor_id: str, target_id: str, work_id: str
+    ) -> OperatorDecision: ...
+
+
+@runtime_checkable
+class InventoryConfirmationAuthorizer(Protocol):
+    """Decides whether to stop watching more targets at once than the retirement bound allows."""
+
+    def authorize_inventory_retirement(
+        self, *, actor_id: str, source_id: str, inventory_generation: int, retirement_count: int
+    ) -> OperatorDecision: ...
