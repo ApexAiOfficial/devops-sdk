@@ -30,11 +30,16 @@ from types import ModuleType
 from typing import Any, Final
 
 from apexai_devops_sdk.contract import (
+    AcknowledgementAuthorizer,
     AttentionSink,
+    ClearanceAuthorizer,
     ContractError,
+    InventoryConfirmationAuthorizer,
     Observation,
+    OperatorDecision,
     Outcome,
     Remedy,
+    RetirementAuthorizer,
     TargetAdapter,
     Watch,
     is_identifier,
@@ -250,6 +255,113 @@ class _DeclaredWatchAuthorizer:
         )
 
 
+INVALID_ANSWER_AUTHORIZER_ID: Final = "sdk-invalid-answer"
+"""The attribution of a refusal the bridge makes for you: your authorizer answered something
+that is not an :class:`~apexai_devops_sdk.contract.OperatorDecision`."""
+
+
+def _engine_decision(rearm: ModuleType, decision: object) -> Any:
+    """Your decision in the engine's type; anything that is not an OperatorDecision refuses."""
+
+    if type(decision) is not OperatorDecision:
+        return rearm.RearmDecision(
+            authorized=False, authorizer_id=INVALID_ANSWER_AUTHORIZER_ID, actor_kind="service"
+        )
+    return rearm.RearmDecision(
+        authorized=decision.authorized,
+        authorizer_id=decision.authorizer_id,
+        actor_kind=decision.actor_kind,
+    )
+
+
+class _BridgedRetirement:
+    def __init__(self, host: RetirementAuthorizer) -> None:
+        self._host = host
+        self._rearm = _module(_REARM)
+
+    def authorize_retirement(self, *, actor_id: str, target_id: str, work_id: str) -> Any:
+        answer = self._host.authorize_retirement(
+            actor_id=actor_id, target_id=target_id, work_id=work_id
+        )
+        return _engine_decision(self._rearm, answer)
+
+
+class _BridgedAcknowledgement:
+    def __init__(self, host: AcknowledgementAuthorizer) -> None:
+        self._host = host
+        self._rearm = _module(_REARM)
+
+    def authorize_acknowledgement(self, *, actor_id: str, target_id: str, work_id: str) -> Any:
+        answer = self._host.authorize_acknowledgement(
+            actor_id=actor_id, target_id=target_id, work_id=work_id
+        )
+        return _engine_decision(self._rearm, answer)
+
+
+class _BridgedClearance:
+    def __init__(self, host: ClearanceAuthorizer) -> None:
+        self._host = host
+        self._rearm = _module(_REARM)
+
+    def authorize_clearance(self, *, actor_id: str, target_id: str, work_id: str) -> Any:
+        answer = self._host.authorize_clearance(
+            actor_id=actor_id, target_id=target_id, work_id=work_id
+        )
+        return _engine_decision(self._rearm, answer)
+
+
+class _BridgedInventoryConfirmation:
+    def __init__(self, host: InventoryConfirmationAuthorizer) -> None:
+        self._host = host
+        self._rearm = _module(_REARM)
+
+    def authorize_inventory_retirement(
+        self, *, actor_id: str, source_id: str, inventory_generation: int, retirement_count: int
+    ) -> Any:
+        answer = self._host.authorize_inventory_retirement(
+            actor_id=actor_id,
+            source_id=source_id,
+            inventory_generation=inventory_generation,
+            retirement_count=retirement_count,
+        )
+        return _engine_decision(self._rearm, answer)
+
+
+OPERATOR_AUTHORIZER_SLOTS: Final[dict[str, tuple[type, str, type]]] = {
+    "retirement_authorizer": (RetirementAuthorizer, "authorize_retirement", _BridgedRetirement),
+    "acknowledgement_authorizer": (
+        AcknowledgementAuthorizer,
+        "authorize_acknowledgement",
+        _BridgedAcknowledgement,
+    ),
+    "clearance_authorizer": (ClearanceAuthorizer, "authorize_clearance", _BridgedClearance),
+    "inventory_confirmation_authorizer": (
+        InventoryConfirmationAuthorizer,
+        "authorize_inventory_retirement",
+        _BridgedInventoryConfirmation,
+    ),
+}
+"""Each operator-act authorizer the wiring passes on: its protocol, its one method, its bridge."""
+
+
+def _operator_authorizers(given: Mapping[str, object]) -> dict[str, object]:
+    """Check each authorizer the host gave against its protocol; ``ContractError`` otherwise."""
+
+    checked: dict[str, object] = {}
+    for slot, host in given.items():
+        if host is None:
+            continue
+        protocol, method, _bridge = OPERATOR_AUTHORIZER_SLOTS[slot]
+        if (
+            isinstance(host, type)
+            or not isinstance(host, protocol)
+            or not callable(getattr(host, method, None))
+        ):
+            raise ContractError(f"engine: {slot} must be an instance with a callable {method}")
+        checked[slot] = host
+    return checked
+
+
 class _DeclaredWatchInventory:
     """The monitor's declared watches as one complete snapshot, read once at start."""
 
@@ -283,6 +395,10 @@ def read_only_host_wiring(
     attention_sink: AttentionSink | None = None,
     watches: Iterable[Watch] | None = None,
     max_unconfirmed_retirements: int = 1,
+    retirement_authorizer: RetirementAuthorizer | None = None,
+    acknowledgement_authorizer: AcknowledgementAuthorizer | None = None,
+    clearance_authorizer: ClearanceAuthorizer | None = None,
+    inventory_confirmation_authorizer: InventoryConfirmationAuthorizer | None = None,
 ) -> Any:
     """The engine's host wiring for a monitor that observes and alerts, and never acts.
 
@@ -303,6 +419,16 @@ def read_only_host_wiring(
     default) declares no inventory at all, and changes no watch. Watches need
     an engine that reconciles a host's watch inventory; with an older one
     this raises :class:`EngineUnavailable`.
+
+    The four authorizers decide operator acts on this monitor's store: retiring
+    a decision, acknowledging a notice, clearing a remedy's recorded failure, and
+    confirming a retirement of more watches than ``max_unconfirmed_retirements``.
+    Each is optional; without one, its act is refused. Each must be an instance
+    whose method answers an :class:`~apexai_devops_sdk.contract.OperatorDecision`
+    (anything else is a refusal). The engine asks one only when an operator
+    requests that act through a surface that carries it. An engine with no slot
+    for a given authorizer raises :class:`EngineUnavailable`. None of them lets
+    the monitor act on a target: the policy still allows nothing.
     """
 
     if not CONTROLLER_ID.fullmatch(controller_id):
@@ -326,9 +452,22 @@ def read_only_host_wiring(
         or max_unconfirmed_retirements < 0
     ):
         raise ContractError("engine: max_unconfirmed_retirements must be a whole number")
+    operators = _operator_authorizers(
+        {
+            "retirement_authorizer": retirement_authorizer,
+            "acknowledgement_authorizer": acknowledgement_authorizer,
+            "clearance_authorizer": clearance_authorizer,
+            "inventory_confirmation_authorizer": inventory_confirmation_authorizer,
+        }
+    )
     authority = _module(_AUTHORITY)
     registry = _module(_REGISTRY)
     wiring = _module(_WIRING)
+    slots = getattr(wiring.HostWiring, "__dataclass_fields__", {})
+    for slot in operators:
+        if slot not in slots:
+            raise EngineUnavailable(f"this DevOps engine has no {slot}")
+    bridged = {slot: OPERATOR_AUTHORIZER_SLOTS[slot][2](host) for slot, host in operators.items()}
     inventory: dict[str, Any] = {}
     if declared is not None:
         if not _reconciles_watches(wiring):
@@ -350,4 +489,5 @@ def read_only_host_wiring(
         registry=registry.BotExtensionRegistry(),
         attention_sink=attention_sink,
         **inventory,
+        **bridged,
     )
