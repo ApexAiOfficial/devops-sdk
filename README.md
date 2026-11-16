@@ -55,6 +55,7 @@ described, with its current status, at [apexaiofficial.com/devops](https://apexa
 | `apexai_devops_sdk.config` | Settings parsing that refuses rather than guesses (`SettingError`), and secrets read from owner-only files. |
 | `apexai_devops_sdk.testing` | `assert_target_adapter` and `check_target_adapter` for your own adapter, and offline fakes: `FakeDockerDaemon`, `FakeTelegramApi`. |
 | `apexai_devops_sdk.engine` | The run-time bridge to the engine (`EngineTargetAdapter`, `read_only_host_wiring`, `engine_available`, `EngineUnavailable`). |
+| `apexai_devops_sdk.fence` | `FileFence`: a target fence kept in files on one host, for a host whose state lives in files. The engine's account raises each target's floor; your commit path commits only inside `committing(target_id, epoch)`, which refuses a stale epoch (`FenceStale`) or an unavailable lock (`FenceUnavailable`). Only a host that registers a remedy needs a fence; see [`docs/design/file-fence.md`](docs/design/file-fence.md). |
 
 The package has no command-line tool and does not contain the engine. It has no client for any
 ApexAi service: it never contacts ApexAi and needs no ApexAi account or key.
@@ -623,6 +624,9 @@ cannot starve the others. Without the engine, retrying is up to the caller.
 | `RuntimeError: the fake daemon did not start`, with `OSError: AF_UNIX path too long` above it | The directory given to `FakeDockerDaemon` is too long for a Unix socket path (about 108 bytes on Linux). Use a short directory, such as `tempfile.TemporaryDirectory()` with the default temporary directory. |
 | `sink.check()` returns `False` | The token file is a symbolic link, is not owned by the running user, has group or other permissions (use mode `0600`), lacks the key, or holds a value that is not a bot token; or the state directory is missing, not owned by that user, writable by others, or not writable by the sink. |
 | `ContractError: telegram: api_base must be an https origin (http on loopback)` | `api_base` must be an `https://` origin with no path; plain `http://` is accepted only on loopback, for tests. |
+| `FenceStale` from `FileFence.committing` | The epoch you were handed is not the target's floor: a later change has superseded it, or no floor has been raised. Do not commit. |
+| `FenceUnavailable` from `FileFence.committing` | No raise has created the target's lock yet, the lock was not obtained within `commit_wait_seconds`, or the directory or the lock file failed its checks. Do not commit. |
+| `FileFence.fence_capability` answers `False` | The directory is missing, a link, not owned by `owner_uid`, not mode `2750`, or on a filesystem other than ext4 or xfs; or its parent is owned by anyone but root or `owner_uid`, or is writable by its group or others. The SDK never creates or widens either; the deployment does. |
 | `EngineUnavailable: the DevOps engine's host interface is not installed` | Expected everywhere outside an ApexAi-operated engine environment. Everything outside `apexai_devops_sdk.engine` still works. |
 | `check_target_adapter` reports `observe raised ConnectionError (answer unobservable instead)` | `observe` let an exception escape. Catch it and return `Outcome.UNOBSERVABLE` with a reason code. |
 | `check_target_adapter` reports `an unknown target or predicate was observed conclusively` | `observe` answered healthy or broken for a target or predicate it does not watch. Answer `UNOBSERVABLE`. |

@@ -4,6 +4,20 @@ All notable changes to this SDK. The format follows [Keep a Changelog](https://k
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, a minor version may
 change the API).
 
+## Unreleased
+
+### Added
+- `apexai_devops_sdk.fence`: `FileFence`, a target fence kept in files on one host, built as
+  `docs/design/file-fence.md` decides. `fence_capability`, `publish_fence` and `fence_floor` answer the fence's three
+  questions; your commit path runs inside `committing(target_id, epoch)`, which raises `FenceStale` unless the
+  epoch equals the floor and `FenceUnavailable` when the lock cannot be obtained within its wait. Both are
+  `ContractError`s. Both waits are required, finite and above zero. Standard library only; it logs nothing.
+
+### Documentation
+- `docs/design/file-fence.md`: built. Two rules added while building it: the filesystem check reads only
+  `/proc/self/mountinfo`, and a raise whose directory `fsync` fails after the rename answers `False` while the
+  floor may already read the new epoch (never a lower one).
+
 ## 0.3.0 (2026-11-16)
 
 ### Added

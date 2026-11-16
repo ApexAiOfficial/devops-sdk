@@ -5,8 +5,9 @@ The SDK is the integration layer only. It defines the host contract
 (:mod:`~apexai_devops_sdk.compose`, :mod:`~apexai_devops_sdk.statusfile`,
 :mod:`~apexai_devops_sdk.telegram`), settings helpers
 (:mod:`~apexai_devops_sdk.config`), contract checks and fakes for tests
-(:mod:`~apexai_devops_sdk.testing`), and the run-time bridge to the engine
-(:mod:`~apexai_devops_sdk.engine`). The engine itself is proprietary, runs only
+(:mod:`~apexai_devops_sdk.testing`), a file-backed target fence for a host's
+commit path (:mod:`~apexai_devops_sdk.fence`), and the run-time bridge to the
+engine (:mod:`~apexai_devops_sdk.engine`). The engine itself is proprietary, runs only
 in environments ApexAi operates, and is not part of this package.
 """
 
