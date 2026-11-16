@@ -22,6 +22,8 @@ change the API).
   `ContractError`, never `TypeError`, for an `authorizers` entry that is not a slot's name.
 
 ### Documentation
+- `docs/design/file-fence.md`: the design of a file-backed target fence for a host whose state lives in files on
+  one host. Decided, not built; it is built with the first product that needs it.
 - How an authorizer runs: in the engine's own process, under the lock every act and cycle waits on, unbounded,
   so it answers from approvals collected beforehand and never opens the engine's state. What the inventory
   confirmation's `inventory_generation` and `retirement_count` are. See `docs/contract.md`, "Operator acts".
