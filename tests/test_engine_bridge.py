@@ -195,10 +195,9 @@ def test_the_inventory_is_one_complete_snapshot_with_a_fresh_token(watch_stand_i
     assert wiring.inventory_retirement_bound == 1
 
 
-def test_an_empty_set_is_a_set(watch_stand_in: None) -> None:
-    wiring = _watch_wiring(watches=())
-    assert wiring.watch_inventory.snapshot().declared_watches == ()
-    assert wiring.watch_authorizer is not None
+def test_an_empty_set_is_refused_before_the_engine_refuses_it(watch_stand_in: None) -> None:
+    with pytest.raises(ContractError, match="watches is empty"):
+        _watch_wiring(watches=())
 
 
 def test_the_authorizer_allows_only_the_monitor_its_own_set(watch_stand_in: None) -> None:

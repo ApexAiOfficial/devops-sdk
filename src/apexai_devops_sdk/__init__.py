@@ -29,7 +29,7 @@ from apexai_devops_sdk.contract import (
     utc_timestamp,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "CONTRACT_VERSION",
