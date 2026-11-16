@@ -25,6 +25,9 @@ Every member runs inside the engine's time bound, possibly in a forked child pro
 
 - **Bounded and read-only.** Never write, never start a thread, never keep a connection open
   between calls. Open what you need when you are called.
+- **Never touch the engine's own state.** Never open the engine's database or its evidence files, and
+  never read the engine through its inspection interface, from inside one of these calls. A call can run
+  in a forked child of the engine, where opening the engine's database is unsafe for the engine.
 - **Never raise for the target's sake.** An exception is an error, never a finding. When you
   cannot tell, return `UNOBSERVABLE` with a closed reason code.
 - **Never guess.** Only `OBSERVED_BROKEN` can lead to a decision. A value you do not recognise is
@@ -88,6 +91,9 @@ Offers are **at least once**: the same notice can arrive again after a crash. De
 `notification_id` (`ntf_` followed by hex digits) in durable storage, not memory.
 `AttentionNotice.from_payload` reads the notice from the engine's payload, a mapping, or any object
 with the fields.
+
+`offer` runs inside the engine's time bound like an adapter's members, under the same rules: bounded,
+no thread, no connection kept, and never the engine's own state.
 
 ## Operator acts: `OperatorDecision` and the four authorizers
 

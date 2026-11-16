@@ -15,6 +15,9 @@ change the API).
   The policy still allows nothing. See `docs/contract.md`, "Operator acts".
 
 ### Documentation
+- A collaborator never opens the engine's database or evidence, and never reads the engine through its
+  inspection interface, inside a call the engine makes to it: such a call can run in a forked child. A sink's
+  `offer` follows the adapter rules too. See `docs/contract.md`.
 - `max_unconfirmed_retirements` counts watches, not targets. When one start would remove more
   watches than the bound, the engine removes none of them, and they stay watched: this wiring
   cannot confirm a removal. The README, `docs/contract.md` and the docstrings now say so, and
