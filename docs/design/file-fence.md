@@ -1,6 +1,7 @@
 # Design note: a file-backed target fence (proposal, not built)
 
-**Status:** a proposal for review. Nothing in this note is in the SDK yet, and nothing changes for a read-only
+**Status:** a design, decided and not built (its open questions are settled at the end). Nothing in this note is in
+the SDK yet, and nothing changes for a read-only
 host: a monitor that registers no remedy needs no fence.
 
 ## What a fence is for
@@ -131,8 +132,14 @@ remedy runs: that fails closed. Keep commit blocks short, and size `raise_wait_s
 - a temporary file left by a crashed raise is removed by the next raise;
 - a target identifier outside the contract's rule is refused before any file is named.
 
-## Open for review
+## Decided (2026-11-16)
 
-- The module and class names, and whether `committing` should log the target and epoch it admitted.
-- Whether the two waits need defaults, or should be required.
-- The first product to use it, and which of its changes sits inside one commit block.
+- **Names:** the module `apexai_devops_sdk.fence`, the class `FileFence`, the errors `FenceUnavailable` and
+  `FenceStale`, both subclasses of the SDK's `ContractError`.
+- **The waits are required**, with no defaults: the right `raise_wait_seconds` depends on the longest commit block,
+  which only the host knows, and a default would hide that choice. Each must be a finite number above zero.
+- **`committing` logs nothing.** The SDK never logs; a host that wants a record of admitted commits writes it inside
+  its own block, where it knows the change.
+- **No product needs it yet:** the read-only monitors run no remedy. It is built when the first product registers a
+  remedy on a target whose state lives in files on one host, with that product's commit block as its first test
+  case.
