@@ -1,6 +1,7 @@
 # The host contract, version 1
 
-The engine asks a host two kinds of things, and the host offers one kind of thing back.
+The engine asks a host two kinds of things, and the host offers one kind of thing back. A host may also decide
+operator acts on its store (the last section).
 
 ## Targets and predicates
 
@@ -62,7 +63,8 @@ One look the engine owes on cadence: `target_id` and `predicate_id` (identifiers
 `read_only_host_wiring(..., watches=[...])`. At start the engine declares each watch as that
 monitor, and stops watching a watch removed from the set. `max_unconfirmed_retirements`
 (default 1) counts watches, not targets: when one start would remove more than that, the engine
-removes none, and they stay watched, because this wiring cannot confirm a removal. Set it to the
+removes none, and they stay watched unless an `inventory_confirmation_authorizer` confirms them
+("Operator acts", below). Set it to the
 number of watches you declare per target. The engine refuses to start a monitor whose set is
 empty; leaving `watches` out declares nothing.
 A watch grants nothing: it never authorizes a remedy, and the engine may refuse an interval its
@@ -104,10 +106,19 @@ than `max_unconfirmed_retirements` allows. You decide each one; the engine recor
 Each method answers an `OperatorDecision(authorized, authorizer_id, actor_kind="human")`:
 
 - `authorized`: a `bool`;
-- `authorizer_id`: the authority that decided (your policy, your rota), never the person; a short lowercase label
-  (`[a-z][a-z0-9]*` with `-` between parts, at most 32 characters), because it is recorded and shown;
-- `actor_kind`: `human` or `service`.
+- `authorizer_id`: the authority that decided (your policy, your rota), never the person; a short lowercase label,
+  because it is recorded and shown: lowercase letters and digits, starting with a letter, parts joined by single
+  hyphens (`oncall-policy`, `ops-2`), at most 32 characters, and never starting with `sdk-`, which the SDK's own
+  attributions use;
+- `actor_kind`: the kind of the actor who asked (the question's `actor_id`), `human` or `service`.
 
-Anything else your method returns is a refusal. An authorizer must be an instance, not a class. None of them lets
-the monitor act on a target: its policy still allows nothing. An engine without the slot for an authorizer you give
-raises `EngineUnavailable`.
+Anything else your method returns is a refusal. **If your method raises, the act fails and nothing is done.** The
+engine asks while it performs the act and waits for your answer: answer promptly from your own state, never by
+waiting on a person or a network call that can hang. An authorizer must be an instance, not a class.
+
+**Confirm only your own watches.** `authorize_inventory_retirement` is asked with the `source_id` whose watches
+would go. A monitor's own source is `engine.watch_source_id(controller_id)`; confirming any other source applies
+another monitor's removals, so refuse it unless that is what you mean.
+
+None of them lets the monitor act on a target: its policy still allows nothing. An engine without the slot for an
+authorizer you give raises `EngineUnavailable`; `engine.engine_available(authorizers=[...])` asks first.
