@@ -1,7 +1,8 @@
 """The four operator-act authorizers: the contract's decision, and the bridge's pass-through.
 
-Engine-free, against the stand-in of ``test_engine_bridge.py``; ``test_engine_live.py`` checks the
-real engine's slots where it is present.
+Engine-free, against the stand-in of ``test_engine_bridge.py``. ``test_engine_live.py``'s
+``test_the_engine_takes_the_operator_authorizers`` repeats the pass-through against a real engine
+that has the slots, where one is installed.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from test_engine_bridge import (  # noqa: F401 - the stand-in's fixtures, used b
     CONTROLLER,
     _HostWiring,
     _RearmDecision,
+    _WatchHostWiring,
     stand_in,
     watch_stand_in,
 )
@@ -32,7 +34,7 @@ SLOTS = (
 
 
 @dataclass
-class _OperatorHostWiring(_HostWiring):
+class _OperatorHostWiring(_WatchHostWiring):
     retirement_authorizer: Any = None
     acknowledgement_authorizer: Any = None
     clearance_authorizer: Any = None
@@ -112,6 +114,9 @@ def test_a_decision_is_a_bool_a_short_label_and_a_known_kind() -> None:
         (True, "-oncall", "human"),  # not a label
         (True, "oncall", "robot"),  # unknown kind
         (True, 7, "human"),  # not text
+        (True, "sdk-invalid-answer", "human"),  # the SDK's own attribution
+        (True, "sdk-declared-watches", "service"),  # the SDK's own attribution
+        (True, "oncall", ["human"]),  # not hashable: still a ContractError
     ],
 )
 def test_a_decision_the_engine_could_not_record_is_refused(
@@ -182,3 +187,39 @@ def test_the_policy_still_allows_nothing(operator_stand_in: None) -> None:
     wiring = _wiring(**{slot: _Policy() for slot in SLOTS})
     assert wiring.policy.enabled is False
     assert wiring.policy.allowed_action_ids == frozenset()
+
+
+class _Raises(_Policy):
+    def authorize_retirement(self, *, actor_id: str, target_id: str, work_id: str) -> object:
+        raise RuntimeError("the policy service is down")
+
+
+def test_an_authorizer_that_raises_is_not_turned_into_an_answer(operator_stand_in: None) -> None:
+    """The engine makes the act fail with nothing done; the bridge must not decide in its place."""
+
+    authorizer = _wiring(retirement_authorizer=_Raises()).retirement_authorizer
+    with pytest.raises(RuntimeError, match="policy service"):
+        authorizer.authorize_retirement(actor_id="alice", target_id="web", work_id="wrk_1")
+
+
+def test_watches_and_authorizers_go_together(operator_stand_in: None) -> None:
+    from test_engine_bridge import WATCHES
+
+    wiring = _wiring(watches=WATCHES, inventory_confirmation_authorizer=_Policy())
+    assert wiring.watch_inventory is not None and wiring.watch_authorizer is not None
+    decision = wiring.inventory_confirmation_authorizer.authorize_inventory_retirement(
+        actor_id="alice", source_id=bridge.watch_source_id(CONTROLLER),
+        inventory_generation=2, retirement_count=4,
+    )  # fmt: skip
+    assert decision.authorized is True
+
+
+def test_engine_available_asks_for_the_slots(
+    operator_stand_in: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert bridge.engine_available(authorizers=SLOTS)
+    monkeypatch.setattr(sys.modules["apexai_ops.runtime.wiring"], "HostWiring", _WatchHostWiring)
+    assert bridge.engine_available(authorizers=())
+    assert not bridge.engine_available(authorizers=["retirement_authorizer"])
+    with pytest.raises(ContractError, match="not_a_slot"):
+        bridge.engine_available(authorizers=["not_a_slot"])

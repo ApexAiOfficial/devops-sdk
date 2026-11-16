@@ -112,3 +112,42 @@ def test_the_engine_takes_the_declared_watches() -> None:
         watches=(),
     )
     assert empty.watch_inventory.snapshot().declared_watches == ()
+
+
+def test_the_engine_takes_the_operator_authorizers() -> None:
+    """Where the engine has the operator-act slots, the bridge answers in the engine's type."""
+
+    slots = tuple(bridge.OPERATOR_AUTHORIZER_SLOTS)
+    if not bridge.engine_available(authorizers=slots):
+        pytest.skip("this engine version has no slots for the operator-act authorizers")
+    from apexai_ops.control.rearm import RearmDecision, is_safe_attribution_id
+
+    from apexai_devops_sdk import OperatorDecision
+
+    class Policy:
+        def authorize_retirement(self, **_: object) -> OperatorDecision:
+            return OperatorDecision(authorized=True, authorizer_id="oncall-policy")
+
+        authorize_acknowledgement = authorize_clearance = authorize_retirement
+
+        def authorize_inventory_retirement(self, **_: object) -> OperatorDecision:
+            return OperatorDecision(authorized=False, authorizer_id="oncall-policy")
+
+    wiring = bridge.read_only_host_wiring(
+        ComposeHealthAdapter({"web": ComposeService("example", "app")}),
+        controller_id=CONTROLLER,
+        policy_revision="r1",
+        **{slot: Policy() for slot in slots},
+    )
+    question = {"actor_id": "alice", "target_id": "web", "work_id": "wrk_1"}
+    for slot in ("retirement_authorizer", "acknowledgement_authorizer", "clearance_authorizer"):
+        method = bridge.OPERATOR_AUTHORIZER_SLOTS[slot][1]
+        decision = getattr(getattr(wiring, slot), method)(**question)
+        assert type(decision) is RearmDecision and decision.authorized is True
+        assert is_safe_attribution_id(decision.authorizer_id)
+    refused = wiring.inventory_confirmation_authorizer.authorize_inventory_retirement(
+        actor_id="alice", source_id=bridge.watch_source_id(CONTROLLER),
+        inventory_generation=1, retirement_count=3,
+    )  # fmt: skip
+    assert type(refused) is RearmDecision and refused.authorized is False
+    assert is_safe_attribution_id(bridge.INVALID_ANSWER_AUTHORIZER_ID)

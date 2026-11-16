@@ -84,22 +84,35 @@ def _module(name: str) -> ModuleType:
         raise EngineUnavailable("the DevOps engine is installed but failed to import") from broken
 
 
-def engine_available(*, watches: bool = False) -> bool:
+def engine_available(*, watches: bool = False, authorizers: Iterable[str] = ()) -> bool:
     """Whether the parts of the engine's host interface a monitor uses can be imported.
 
     With ``watches=True``, also the parts that declared watches need (an older
     engine has the rest, and :func:`read_only_host_wiring` refuses it watches).
+    ``authorizers`` names operator-act slots (keys of
+    :data:`OPERATOR_AUTHORIZER_SLOTS`) the monitor will give; each must exist in
+    this engine's wiring.
     """
 
+    wanted = tuple(authorizers)
+    unknown = [slot for slot in wanted if slot not in OPERATOR_AUTHORIZER_SLOTS]
+    if unknown:
+        raise ContractError(f"engine: not an operator-act authorizer: {', '.join(unknown)}")
     names: tuple[str, ...] = (_OBSERVATION, _AUTHORITY, _REGISTRY, _WIRING)
     if watches:
         names += (_INVENTORY, _REARM, _SUPERVISION)
+    if wanted:
+        names += (_REARM,)
     try:
         for name in names:
             _module(name)
     except EngineUnavailable:
         return False
-    return not watches or _reconciles_watches(_module(_WIRING))
+    wiring = _module(_WIRING)
+    slots = getattr(wiring.HostWiring, "__dataclass_fields__", {})
+    if any(slot not in slots for slot in wanted):
+        return False
+    return not watches or _reconciles_watches(wiring)
 
 
 def _reconciles_watches(wiring: ModuleType) -> bool:
@@ -414,7 +427,8 @@ def read_only_host_wiring(
     the set. ``max_unconfirmed_retirements`` counts watches, not targets:
     when one start would retire more than that, the engine retires none of
     them and keeps them for a confirmation, which this wiring cannot give, so
-    they stay watched. Set it to the number of watches declared per target.
+    they stay watched, unless ``inventory_confirmation_authorizer`` confirms
+    them. Set it to the number of watches declared per target.
     The engine refuses to start a monitor whose set is empty. ``None`` (the
     default) declares no inventory at all, and changes no watch. Watches need
     an engine that reconciles a host's watch inventory; with an older one
@@ -422,13 +436,17 @@ def read_only_host_wiring(
 
     The four authorizers decide operator acts on this monitor's store: retiring
     a decision, acknowledging a notice, clearing a remedy's recorded failure, and
-    confirming a retirement of more watches than ``max_unconfirmed_retirements``.
-    Each is optional; without one, its act is refused. Each must be an instance
-    whose method answers an :class:`~apexai_devops_sdk.contract.OperatorDecision`
-    (anything else is a refusal). The engine asks one only when an operator
-    requests that act through a surface that carries it. An engine with no slot
-    for a given authorizer raises :class:`EngineUnavailable`. None of them lets
-    the monitor act on a target: the policy still allows nothing.
+    confirming a retirement of more watches than ``max_unconfirmed_retirements``
+    (without ``inventory_confirmation_authorizer``, such a retirement waits, as
+    above). Each is optional; without one, its act is refused. Each must be an
+    instance whose method answers an
+    :class:`~apexai_devops_sdk.contract.OperatorDecision`: any other answer is a
+    refusal, and a method that raises makes the act fail with nothing done. The
+    engine asks one only when an operator requests that act through a surface
+    that carries it. An engine with no slot for a given authorizer raises
+    :class:`EngineUnavailable` (:func:`engine_available` with ``authorizers=``
+    asks first). None of them lets the monitor act on a target: the policy still
+    allows nothing.
     """
 
     if not CONTROLLER_ID.fullmatch(controller_id):

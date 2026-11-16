@@ -362,7 +362,12 @@ AUTHORIZER_ID: Final = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
 underscore, dot or colon), the only shape the engine records as attribution."""
 
 ACTOR_KINDS: Final = frozenset({"human", "service"})
-"""What kind of actor asked: an accountable person, or a service acting on somebody's behalf."""
+"""What kind of actor asked (the question's ``actor_id``): an accountable person, or a service the
+host holds accountable on somebody's behalf."""
+
+RESERVED_AUTHORIZER_PREFIX: Final = "sdk-"
+"""The SDK's own attributions (its declared-watch decisions, the refusal of an invalid answer) start
+with this; an :class:`OperatorDecision` may not, so a host decision is never mistaken for one."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -371,9 +376,10 @@ class OperatorDecision:
 
     ``authorizer_id`` names the authority that decided (your policy, your on-call
     rota), never the person: the person is the ``actor_id`` the question carries.
-    It must match :data:`AUTHORIZER_ID` and be at most 32 characters, so that it
-    can be recorded and shown without carrying anything else. Explain a refusal
-    in your own audit log; nothing here carries free text.
+    It must match :data:`AUTHORIZER_ID`, be at most 32 characters, and not start
+    with :data:`RESERVED_AUTHORIZER_PREFIX`, so that it can be recorded and shown
+    without carrying anything else. ``actor_kind`` is the kind of the actor who
+    asked. Explain a refusal in your own audit log; nothing here carries free text.
     """
 
     authorized: bool
@@ -389,8 +395,15 @@ class OperatorDecision:
             or not AUTHORIZER_ID.fullmatch(self.authorizer_id)
         ):
             raise ContractError("OperatorDecision.authorizer_id must be a short lowercase label")
-        if self.actor_kind not in ACTOR_KINDS:
+        if self.authorizer_id.startswith(RESERVED_AUTHORIZER_PREFIX):
+            raise ContractError("OperatorDecision.authorizer_id may not start with 'sdk-'")
+        if not isinstance(self.actor_kind, str) or self.actor_kind not in ACTOR_KINDS:
             raise ContractError("OperatorDecision.actor_kind must be 'human' or 'service'")
+
+
+# The four operator-act authorizers. The engine asks one while it performs that operator act, and
+# waits for the answer: answer promptly from your own state, never by waiting on a person or a
+# network call that can hang. A method that raises makes the act fail with nothing done.
 
 
 @runtime_checkable
@@ -422,7 +435,13 @@ class ClearanceAuthorizer(Protocol):
 
 @runtime_checkable
 class InventoryConfirmationAuthorizer(Protocol):
-    """Decides whether to stop watching more targets at once than the retirement bound allows."""
+    """Decides whether to apply a retirement of more watches at once than the bound allows.
+
+    ``source_id`` names the inventory source whose watches would go. A monitor
+    should confirm only its own source (:func:`apexai_devops_sdk.engine.watch_source_id`
+    of its controller id): confirming another source applies another monitor's
+    removals.
+    """
 
     def authorize_inventory_retirement(
         self, *, actor_id: str, source_id: str, inventory_generation: int, retirement_count: int

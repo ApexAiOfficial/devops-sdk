@@ -48,7 +48,7 @@ described, with its current status, at [apexaiofficial.com/devops](https://apexa
 
 | Module | What it provides |
 |---|---|
-| `apexai_devops_sdk.contract` | The host contract: `Observation`, `Outcome`, `Remedy`, the `TargetAdapter` and `AttentionSink` protocols, `AttentionNotice`, `SinkOutcome`, `Watch`, `utc_timestamp`, `ContractError`. Re-exported from `apexai_devops_sdk`. |
+| `apexai_devops_sdk.contract` | The host contract: `Observation`, `Outcome`, `Remedy`, the `TargetAdapter` and `AttentionSink` protocols, `AttentionNotice`, `SinkOutcome`, `Watch`, `OperatorDecision` and the four operator-act authorizer protocols (`RetirementAuthorizer`, `AcknowledgementAuthorizer`, `ClearanceAuthorizer`, `InventoryConfirmationAuthorizer`; `docs/contract.md`, "Operator acts"), `utc_timestamp`, `ContractError`. Re-exported from `apexai_devops_sdk`. |
 | `apexai_devops_sdk.compose` | `ComposeHealthAdapter`: watches Docker Compose service containers through the Docker Engine API (running state and the image's own `HEALTHCHECK`). |
 | `apexai_devops_sdk.statusfile` | `read_json_status`: a bounded, link-safe read of a JSON status file that another process writes. |
 | `apexai_devops_sdk.telegram` | `TelegramAttentionSink`: delivers attention notices to Telegram chats, at least once and de-duplicated. |
@@ -548,8 +548,9 @@ def runtime():
 and stops watching a watch removed from it. Three rules decide what a removal does:
 
 - **`max_unconfirmed_retirements` (default 1) counts watches, not targets.** When one start would
-  remove more watches than that, the engine removes none of them: they wait for a confirmation,
-  which this wiring cannot give, so they stay watched until a start whose bound covers them all.
+  remove more watches than that, the engine removes none of them: they wait for a confirmation.
+  Without an `inventory_confirmation_authorizer` (below) this wiring cannot give one, so they stay
+  watched until a start whose bound covers them all.
   Set it to the number of watches you declare per target (2 in the example above), so that
   removing one target takes effect at the next start. Keep it small: it is what stops a settings
   mistake from silently ending the watch on a whole fleet.
